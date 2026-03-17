@@ -1,0 +1,28 @@
+{
+  "name": "wmsomie",
+  "version": "1.0.0",
+  "description": "WMS com Node.js + MongoDB integrado com Omie",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "dev:all": "node start-dev.js",
+    "start:all": "node start-prod.js",
+    "install:all": "npm install && cd ui && npm install",
+    "stop": "node stop.js"
+  },
+  "keywords": ["wms", "logistica", "estoque", "omie"],
+  "author": "your-name",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.2",
+    "mongoose": "^8.3.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}
