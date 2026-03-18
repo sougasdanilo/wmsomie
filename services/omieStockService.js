@@ -117,13 +117,24 @@ export async function syncAllStockFromOmie() {
       }
       
       if (stockQuantity !== null) {
-        await Stock.findOneAndUpdate(
-          { product: product._id, location: defaultLocation._id },
-          { quantity: stockQuantity },
-          { upsert: true, new: true }
-        );
-        syncedCount++;
-        logger.logStockSync(product, 'synced_from_omie', stockQuantity);
+        // Verificar se já existe estoque local e se deve ser mantido
+        const localStock = await Stock.findOne({ product: product._id, location: defaultLocation._id });
+        
+        if (localStock && localStock.quantity > 0) {
+          // Manter o estoque local se for maior que zero
+          logger.info(`Keeping local stock for ${product.sku}: ${localStock.quantity} (Omie has: ${stockQuantity})`);
+          syncedCount++;
+          logger.logStockSync(product, 'kept_local_stock', localStock.quantity);
+        } else {
+          // Atualizar apenas se o estoque local for zero ou não existir
+          await Stock.findOneAndUpdate(
+            { product: product._id, location: defaultLocation._id },
+            { quantity: stockQuantity },
+            { upsert: true, new: true }
+          );
+          syncedCount++;
+          logger.logStockSync(product, 'synced_from_omie', stockQuantity);
+        }
       } else {
         logger.warn(`No stock quantity found for product ${product.sku}`);
       }
