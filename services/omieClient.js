@@ -12,7 +12,12 @@ export async function callOmie(endpoint, call, param = {}) {
 
   const { data } = await axios.post(
     `${omieConfig.baseURL}${endpoint}`,
-    payload
+    payload,
+    {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
   );
 
   if (data.faultstring) throw new Error(data.faultstring);

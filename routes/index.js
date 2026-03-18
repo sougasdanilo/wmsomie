@@ -7,8 +7,12 @@ import Order from '../models/Order.js';
 import Stock from '../models/Stock.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
+import syncRoutes from './sync.js';
 
 const router = Router();
+
+// Sync routes
+router.use('/sync', syncRoutes);
 
 // Endpoints existentes
 router.post('/stock/inbound', stockController.inbound);

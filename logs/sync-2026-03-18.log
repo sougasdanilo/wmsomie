@@ -1,0 +1,23 @@
+{"timestamp":"2026-03-18T22:09:20.265Z","level":"info","message":"Starting product sync from Omie","data":null}
+{"timestamp":"2026-03-18T22:09:20.271Z","level":"debug","message":"Fetching products page 1","data":null}
+{"timestamp":"2026-03-18T22:09:20.473Z","level":"error","message":"Failed to sync products from Omie","data":{"error":"Request failed with status code 403"}}
+{"timestamp":"2026-03-18T22:09:33.008Z","level":"info","message":"Starting product sync from Omie","data":null}
+{"timestamp":"2026-03-18T22:09:33.011Z","level":"debug","message":"Fetching products page 1","data":null}
+{"timestamp":"2026-03-18T22:09:33.332Z","level":"error","message":"Failed to sync products from Omie","data":{"error":"Request failed with status code 403"}}
+{"timestamp":"2026-03-18T22:10:08.819Z","level":"info","message":"Starting product sync from Omie","data":null}
+{"timestamp":"2026-03-18T22:10:08.824Z","level":"debug","message":"Fetching products page 1","data":null}
+{"timestamp":"2026-03-18T22:10:09.651Z","level":"debug","message":"Found 10 products on page 1","data":null}
+{"timestamp":"2026-03-18T22:10:09.653Z","level":"info","message":"Total products found: 10","data":null}
+{"timestamp":"2026-03-18T22:10:19.680Z","level":"error","message":"Failed to sync product 1000","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:10:29.688Z","level":"error","message":"Failed to sync product 110007405","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:10:39.706Z","level":"error","message":"Failed to sync product 110007406","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:10:49.717Z","level":"error","message":"Failed to sync product 111954120","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:10:59.735Z","level":"error","message":"Failed to sync product 111954114","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:09.748Z","level":"error","message":"Failed to sync product 7114168","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:19.763Z","level":"error","message":"Failed to sync product 111904125","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:29.770Z","level":"error","message":"Failed to sync product 111937242","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:39.775Z","level":"error","message":"Failed to sync product 7457922","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:49.778Z","level":"error","message":"Failed to sync product 109325141","data":{"error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}}
+{"timestamp":"2026-03-18T22:11:49.779Z","level":"info","message":"Sync operation completed: products_from_omie","data":{"syncedCount":0,"errorsCount":10,"errors":[{"product":"1000","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"110007405","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"110007406","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"111954120","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"111954114","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"7114168","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"111904125","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"111937242","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"7457922","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"},{"product":"109325141","error":"Operation `products.findOneAndUpdate()` buffering timed out after 10000ms"}]}}
+{"timestamp":"2026-03-18T22:15:00.840Z","level":"info","message":"Starting stock sync to Omie","data":null}
+{"timestamp":"2026-03-18T22:15:00.854Z","level":"info","message":"Stock sync to Omie completed","data":{"successCount":0,"errorCount":0}}
