@@ -3,7 +3,23 @@ import axios from 'axios';
 
 export const api = axios.create({
   baseURL: 'http://localhost:3000/api',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  }
 });
+
+// Adicionar interceptor para debugging
+api.interceptors.response.use(
+  response => {
+    console.log('API Response:', response.config.url, response.data);
+    return response;
+  },
+  error => {
+    console.error('API Error:', error.config?.url, error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
 
 export const movementApi = {
   getMovements: () => api.get('/movements'),

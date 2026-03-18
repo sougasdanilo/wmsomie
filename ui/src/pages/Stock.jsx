@@ -15,10 +15,15 @@ export default function Stock() {
 
   const loadStock = async () => {
     try {
+      console.log('Carregando dados de estoque...');
       const response = await stockApi.getStock();
-      setStock(response.data);
+      console.log('Resposta da API de estoque:', response.status);
+      console.log('Dados brutos do estoque:', response.data);
+      console.log('Estrutura do primeiro item:', response.data[0]);
+      setStock(response.data || []);
     } catch (error) {
       console.error('Error loading stock:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
     } finally {
       setLoading(false);
     }
@@ -26,12 +31,16 @@ export default function Stock() {
 
   const handleLocationUpdate = async (productId) => {
     try {
-      await stockApi.updateLocation(productId, newLocation);
+      console.log('Atualizando localização do produto...');
+      const response = await stockApi.updateLocation(productId, newLocation);
+      console.log('Resposta da API de atualização de localização:', response.status);
+      console.log('Dados brutos da atualização de localização:', response.data);
       await loadStock();
       setEditing(null);
       setNewLocation('');
     } catch (error) {
       console.error('Error updating location:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
     }
   };
 

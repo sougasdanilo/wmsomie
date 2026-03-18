@@ -22,21 +22,32 @@ export default function Dashboard() {
         orderApi.getOrders()
       ]);
       
-      console.log('Dados recebidos:', {
+      console.log('Respostas das APIs:', {
+        inboundStatus: inboundRes.status,
+        outboundStatus: outboundRes.status,
+        transferStatus: transferRes.status,
+        ordersStatus: ordersRes.status
+      });
+      
+      console.log('Dados brutos recebidos:', {
         inbound: inboundRes.data,
         outbound: outboundRes.data,
         transfer: transferRes.data,
         orders: ordersRes.data
       });
       
+      console.log('Estrutura do primeiro movimento:', inboundRes.data[0]);
+      console.log('Estrutura do primeiro pedido:', ordersRes.data[0]);
+      
       setMovements({
-        inbound: inboundRes.data,
-        outbound: outboundRes.data,
-        transfer: transferRes.data
+        inbound: inboundRes.data || [],
+        outbound: outboundRes.data || [],
+        transfer: transferRes.data || []
       });
-      setOrders(ordersRes.data);
+      setOrders(ordersRes.data || []);
     } catch (error) {
       console.error('Error loading data:', error);
+      console.error('Detalhes do erro:', error.response?.data || error.message);
     } finally {
       setLoading(false);
     }
