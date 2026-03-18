@@ -124,4 +124,35 @@ router.patch('/stock/:productId/location', async (req, res) => {
   }
 });
 
+router.post('/stock/transfer', async (req, res) => {
+  try {
+    const { productId, fromLocation, toLocation, quantity } = req.body;
+    
+    // Importar o movementService
+    const { transfer } = await import('../services/movementService.js');
+    
+    const result = await transfer(productId, fromLocation, toLocation, quantity);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/stock/sync-with-omie', async (req, res) => {
+  try {
+    // Importar o serviço de sincronização
+    const { syncAllStockFromOmie } = await import('../services/omieStockService.js');
+    
+    const result = await syncAllStockFromOmie();
+    res.json({
+      success: true,
+      syncedCount: result.syncedCount,
+      errors: result.errors,
+      message: `Sincronizados ${result.syncedCount} produtos do Omie`
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

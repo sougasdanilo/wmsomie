@@ -37,4 +37,11 @@ export const orderApi = {
 export const stockApi = {
   getStock: () => api.get('/stock'),
   updateLocation: (productId, locationId) => api.patch(`/stock/${productId}/location`, { locationId }),
+  syncWithOmie: () => api.post('/stock/sync-with-omie'),
+  transfer: (productId, fromLocation, toLocation, quantity) => api.post('/stock/transfer', {
+    productId,
+    fromLocation,
+    toLocation,
+    quantity
+  }),
 };
