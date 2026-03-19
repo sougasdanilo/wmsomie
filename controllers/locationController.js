@@ -2,15 +2,12 @@
 import Location from '../models/Location.js';
 import { 
   createLocation, 
-  createLocationSequence, 
-  getLocationsByAisle, 
+  searchLocations, 
   getLocationsByZone, 
-  getNextAvailableLocation,
   isLocationAvailable,
   toggleLocationStatus,
   getNearbyLocations
 } from '../services/locationService.js';
-import { sortLocations, groupLocationsByAisle } from '../utils/locationSorter.js';
 
 export async function createLocationController(req, res) {
   try {
@@ -21,38 +18,18 @@ export async function createLocationController(req, res) {
   }
 }
 
-export async function createLocationSequenceController(req, res) {
-  try {
-    const { startCode, quantity, maxPosition, zone, descriptionTemplate } = req.body;
-    const locations = await createLocationSequence({
-      startCode,
-      quantity,
-      maxPosition,
-      zone,
-      descriptionTemplate
-    });
-    res.status(201).json(locations);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-}
 
 export async function getLocations(req, res) {
   try {
-    const { aisle, zone, sortBy = 'code' } = req.query;
+    const { zone, search, sortBy = 'code' } = req.query;
     
     let locations;
-    if (aisle) {
-      locations = await getLocationsByAisle(aisle);
+    if (search) {
+      locations = await searchLocations(search);
     } else if (zone) {
       locations = await getLocationsByZone(zone);
     } else {
-      locations = await Location.find({ isActive: true });
-    }
-    
-    // Aplica ordenação
-    if (sortBy === 'code') {
-      locations = sortLocations(locations);
+      locations = await Location.find({ isActive: true }).sort({ code: 1 });
     }
     
     res.json(locations);
@@ -76,15 +53,6 @@ export async function getLocationByCode(req, res) {
   }
 }
 
-export async function getNextLocation(req, res) {
-  try {
-    const { aisle, level } = req.query;
-    const location = await getNextAvailableLocation(aisle, parseInt(level) || 1);
-    res.json(location);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-}
 
 export async function checkLocationAvailability(req, res) {
   try {
@@ -118,20 +86,3 @@ export async function getLocationsNearby(req, res) {
   }
 }
 
-export async function getLocationsGroupedByAisle(req, res) {
-  try {
-    const { zone } = req.query;
-    let locations;
-    
-    if (zone) {
-      locations = await getLocationsByZone(zone);
-    } else {
-      locations = await Location.find({ isActive: true });
-    }
-    
-    const grouped = groupLocationsByAisle(locations);
-    res.json(grouped);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-}

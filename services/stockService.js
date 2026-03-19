@@ -5,6 +5,42 @@ import Location from '../models/Location.js';
 import logger from '../utils/syncLogger.js';
 import mongoose from 'mongoose';
 
+export async function addStockToReceiving(sku, quantity, options = {}) {
+  logger.debug(`Adding stock to receiving: SKU ${sku}, Quantity ${quantity}`);
+  
+  try {
+    // Validar produto
+    const product = await Product.findBySku(sku);
+    if (!product) {
+      throw new Error(`Product with SKU ${sku} not found`);
+    }
+    
+    // Criar ou atualizar registro de estoque em RECEBIMENTO
+    const stock = await Stock.findOneAndUpdate(
+      { 
+        sku: sku, 
+        locationCode: 'RECEBIMENTO',
+        batchNumber: options.batchNumber || null
+      },
+      { 
+        $inc: { quantity: quantity },
+        lastUpdated: new Date(),
+        lastMovementDate: new Date(),
+        source: options.source || 'PURCHASE',
+        qualityStatus: options.qualityStatus || 'GOOD'
+      },
+      { upsert: true, new: true }
+    );
+    
+    logger.info(`Stock added to receiving successfully`, { sku, quantity, totalStock: stock.quantity });
+    return stock;
+    
+  } catch (error) {
+    logger.error(`Failed to add stock to receiving`, { sku, quantity, error: error.message });
+    throw error;
+  }
+}
+
 export async function addStockToLocation(sku, locationCode, quantity, options = {}) {
   logger.debug(`Adding stock: SKU ${sku}, Location ${locationCode}, Quantity ${quantity}`);
   
@@ -15,10 +51,16 @@ export async function addStockToLocation(sku, locationCode, quantity, options = 
       throw new Error(`Product with SKU ${sku} not found`);
     }
     
-    // Validar localização
-    const location = await Location.findOne({ code: locationCode, isActive: true });
+    // Validar ou criar localização automaticamente
+    let location = await Location.findOne({ code: locationCode, isActive: true });
     if (!location) {
-      throw new Error(`Location ${locationCode} not found or inactive`);
+      location = await Location.create({
+        code: locationCode,
+        description: `Localização ${locationCode}`,
+        type: 'storage',
+        zone: 'Armazém'
+      });
+      logger.info(`Created location: ${locationCode}`);
     }
     
     // Criar ou atualizar registro de estoque
@@ -98,14 +140,33 @@ export async function transferStock(sku, fromLocationCode, toLocationCode, quant
   logger.debug(`Transferring stock: SKU ${sku}, From ${fromLocationCode}, To ${toLocationCode}, Quantity ${quantity}`);
   
   try {
-    // Validar localizações
-    const [fromLocation, toLocation] = await Promise.all([
+    // Validar ou criar localizações automaticamente
+    let [fromLocation, toLocation] = await Promise.all([
       Location.findOne({ code: fromLocationCode, isActive: true }),
       Location.findOne({ code: toLocationCode, isActive: true })
     ]);
     
-    if (!fromLocation) throw new Error(`Source location ${fromLocationCode} not found`);
-    if (!toLocation) throw new Error(`Target location ${toLocationCode} not found`);
+    // Criar localização de origem se não existir
+    if (!fromLocation) {
+      fromLocation = await Location.create({
+        code: fromLocationCode,
+        description: `Localização ${fromLocationCode}`,
+        type: 'storage',
+        zone: 'Armazém'
+      });
+      logger.info(`Created source location: ${fromLocationCode}`);
+    }
+    
+    // Criar localização de destino se não existir
+    if (!toLocation) {
+      toLocation = await Location.create({
+        code: toLocationCode,
+        description: `Localização ${toLocationCode}`,
+        type: 'storage', 
+        zone: 'Armazém'
+      });
+      logger.info(`Created target location: ${toLocationCode}`);
+    }
     
     // Buscar estoque de origem
     const fromStock = await Stock.findOne({ 
@@ -206,6 +267,19 @@ export async function consumeStock(sku, locationCode, quantity, options = {}) {
     
   } catch (error) {
     logger.error(`Failed to consume stock`, { sku, locationCode, quantity, error: error.message });
+    throw error;
+  }
+}
+
+export async function getReceivingStock() {
+  logger.debug(`Getting receiving stock`);
+  
+  try {
+    const receivingStock = await Stock.getReceivingStock();
+    return receivingStock;
+    
+  } catch (error) {
+    logger.error(`Failed to get receiving stock`, { error: error.message });
     throw error;
   }
 }

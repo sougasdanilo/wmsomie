@@ -117,26 +117,17 @@ export async function syncAllStockFromOmie() {
   await syncProducts();
   
   const products = await Product.find({ omieId: { $exists: true, $ne: null }, isActive: true });
-  let locations = await Location.find({ isActive: true });
   
-  // Se não houver localizações, criar algumas padrão
-  if (locations.length === 0) {
-    console.log('No locations found, creating default locations...');
-    const { createLocationSequence } = await import('./locationService.js');
-    locations = await createLocationSequence({
-      startCode: 'AA1',
-      quantity: 10,
-      descriptionTemplate: 'Localização {code}'
+  // Criar localização RECEBIMENTO se não existir
+  let receivingLocation = await Location.findOne({ code: 'RECEBIMENTO' });
+  if (!receivingLocation) {
+    receivingLocation = await Location.create({
+      code: 'RECEBIMENTO',
+      description: 'Área de Recebimento',
+      type: 'receiving',
+      zone: 'Recebimento'
     });
-    console.log(`Created ${locations.length} default locations`);
-  }
-  
-  const defaultLocation = locations[0];
-
-  if (!defaultLocation) {
-    const error = new Error('No default location found. Please create a location first.');
-    logger.error('Stock sync failed - no default location');
-    throw error;
+    logger.info('Created RECEBIMENTO location');
   }
 
   let syncedCount = 0;
@@ -177,9 +168,9 @@ export async function syncAllStockFromOmie() {
           syncedCount++;
           logger.logStockSync(product, 'kept_local_stock', localTotal);
         } else {
-          // Criar/atualizar estoque na localização padrão
+          // Criar/atualizar estoque em RECEBIMENTO
           await Stock.findOneAndUpdate(
-            { sku: product.codigo, locationCode: defaultLocation.code },
+            { sku: product.codigo, locationCode: 'RECEBIMENTO' },
             { 
               quantity: stockQuantity,
               lastUpdated: new Date(),
@@ -188,11 +179,11 @@ export async function syncAllStockFromOmie() {
             { upsert: true, new: true }
           );
           
-          // Atualizar a localização também
-          await defaultLocation.updateSku(product.codigo, stockQuantity, 0);
+          // Atualizar a localização de recebimento também
+          await receivingLocation.updateSku(product.codigo, stockQuantity, 0);
           
           syncedCount++;
-          logger.logStockSync(product, 'synced_from_omie', stockQuantity);
+          logger.logStockSync(product, 'synced_to_receiving', stockQuantity);
         }
       } else {
         logger.warn(`No stock quantity found for product ${product.codigo}`);

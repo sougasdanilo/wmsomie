@@ -1,84 +1,52 @@
 // src/services/locationService.js
 import Location from '../models/Location.js';
-import { generateNextCode, generateLocationSequence, isValidLocationCode, parseLocationCode } from '../utils/locationGenerator.js';
+import { isValidLocationCode, parseLocationCode } from '../utils/locationGenerator.js';
 
 /**
- * Cria uma nova localização com código sequencial automático
+ * Cria uma nova localização com código fornecido manualmente
  * @param {Object} locationData - Dados da localização
  * @returns {Promise<Location>} Localização criada
  */
 export async function createLocation(locationData) {
-  const { aisle, position, level, zone, description } = locationData;
+  const { code, description, zone } = locationData;
   
-  // Se não informar aisle/position, gera automaticamente
-  if (!aisle || !position) {
-    const lastLocation = await Location.findOne().sort({ code: -1 });
-    const nextCode = generateNextCode(lastLocation?.code);
-    const parsed = parseLocationCode(nextCode);
-    
-    return await Location.create({
-      code: nextCode,
-      aisle: parsed.aisle,
-      position: parsed.position,
-      level: parsed.level,
-      zone,
-      description
-    });
+  if (!code || !isValidLocationCode(code)) {
+    throw new Error('Código da localização é obrigatório e deve ser válido');
   }
   
-  // Se informar aisle/position, gera código correspondente
-  const code = level > 1 ? `${aisle}${position}-${level}` : `${aisle}${position}`;
+  // Verificar se o código já existe
+  const existingLocation = await Location.findOne({ code });
+  if (existingLocation) {
+    throw new Error('Código de localização já existe');
+  }
   
   return await Location.create({
-    code,
-    aisle,
-    position,
-    level: level || 1,
-    zone,
-    description
+    code: code.trim(),
+    description,
+    zone
   });
 }
 
-/**
- * Cria múltiplas localizações em sequência
- * @param {Object} options - Opções de geração
- * @returns {Promise<Location[]>} Array de localizações criadas
- */
-export async function createLocationSequence(options) {
-  const { 
-    startCode, 
-    quantity, 
-    maxPosition = 99, 
-    zone, 
-    descriptionTemplate = 'Localização {code}' 
-  } = options;
-  
-  const codes = generateLocationSequence(startCode, quantity, maxPosition);
-  const locations = [];
-  
-  for (const code of codes) {
-    const parsed = parseLocationCode(code);
-    const location = await Location.create({
-      code,
-      aisle: parsed.aisle,
-      position: parsed.position,
-      level: parsed.level,
-      zone,
-      description: descriptionTemplate.replace('{code}', code)
-    });
-    locations.push(location);
-  }
-  
-  return locations;
-}
 
 /**
- * Busca localizações por corredor
- * @param {string} aisle - Código do corredor
- * @returns {Promise<Location[]>} Localizações do corredor
+ * Busca localizações por código parcial ou descrição
+ * @param {string} searchTerm - Termo de busca
+ * @returns {Promise<Location[]>} Localizações encontradas
  */
-export async function getLocationsByAisle(aisle) {
-  return await Location.find({ aisle, isActive: true }).sort({ position: 1, level: 1 });
+export async function searchLocations(searchTerm) {
+  if (!searchTerm) {
+    return await Location.find({ isActive: true }).sort({ code: 1 });
+  }
+  
+  const regex = new RegExp(searchTerm, 'i');
+  return await Location.find({
+    $or: [
+      { code: regex },
+      { description: regex },
+      { zone: regex }
+    ],
+    isActive: true
+  }).sort({ code: 1 });
 }
 
 /**
@@ -87,45 +55,9 @@ export async function getLocationsByAisle(aisle) {
  * @returns {Promise<Location[]>} Localizações da zona
  */
 export async function getLocationsByZone(zone) {
-  return await Location.find({ zone, isActive: true }).sort({ aisle: 1, position: 1, level: 1 });
+  return await Location.find({ zone, isActive: true }).sort({ code: 1 });
 }
 
-/**
- * Busca próxima localização disponível em um corredor
- * @param {string} aisle - Código do corredor
- * @param {number} level - Nível (opcional)
- * @returns {Promise<Location|null>} Próxima localização disponível
- */
-export async function getNextAvailableLocation(aisle, level = 1) {
-  const lastLocation = await Location.findOne({ 
-    aisle, 
-    level, 
-    isActive: true 
-  }).sort({ position: -1 });
-  
-  if (!lastLocation) {
-    // Primeira posição do corredor
-    const code = level > 1 ? `${aisle}1-${level}` : `${aisle}1`;
-    return await Location.create({
-      code,
-      aisle,
-      position: 1,
-      level,
-      isActive: true
-    });
-  }
-  
-  const nextCode = generateNextCode(lastLocation.code);
-  const parsed = parseLocationCode(nextCode);
-  
-  return await Location.create({
-    code: nextCode,
-    aisle: parsed.aisle,
-    position: parsed.position,
-    level: parsed.level,
-    isActive: true
-  });
-}
 
 /**
  * Verifica se uma localização existe e está ativa
@@ -160,7 +92,7 @@ export async function toggleLocationStatus(locationId, isActive) {
 }
 
 /**
- * Busca localizações próximas
+ * Busca localizações próximas (baseado em ordem alfabética)
  * @param {string} locationCode - Código de referência
  * @param {number} radius - Raio de busca (quantidade de posições)
  * @returns {Promise<Location[]>} Localizações próximas
@@ -170,14 +102,15 @@ export async function getNearbyLocations(locationCode, radius = 5) {
     return [];
   }
   
-  const parsed = parseLocationCode(locationCode);
-  const startPosition = Math.max(1, parsed.position - radius);
-  const endPosition = parsed.position + radius;
+  const locations = await Location.find({ isActive: true }).sort({ code: 1 });
+  const currentIndex = locations.findIndex(loc => loc.code === locationCode);
   
-  return await Location.find({
-    aisle: parsed.aisle,
-    position: { $gte: startPosition, $lte: endPosition },
-    level: parsed.level,
-    isActive: true
-  }).sort({ position: 1 });
+  if (currentIndex === -1) {
+    return [];
+  }
+  
+  const startIndex = Math.max(0, currentIndex - radius);
+  const endIndex = Math.min(locations.length - 1, currentIndex + radius);
+  
+  return locations.slice(startIndex, endIndex + 1);
 }

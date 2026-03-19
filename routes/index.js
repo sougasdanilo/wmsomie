@@ -15,21 +15,11 @@ const router = Router();
 // Sync routes
 router.use('/sync', syncRoutes);
 
-// Endpoints existentes
-router.post('/stock/inbound', stockController.inbound);
-router.post('/stock/outbound', stockController.outbound);
-router.post('/stock/transfer/by-sku', stockController.transfer);
-router.get('/picking/:orderId', pickingController.createPicking);
-
 // Endpoints de localização
 router.post('/locations', locationController.createLocationController);
-router.post('/locations/sequence', locationController.createLocationSequenceController);
 router.get('/locations', locationController.getLocations);
-router.get('/locations/grouped', locationController.getLocationsGroupedByAisle);
-router.get('/locations/by-aisle/:aisle', locationController.getLocations);
 router.get('/locations/by-zone/:zone', locationController.getLocations);
 router.get('/locations/code/:code', locationController.getLocationByCode);
-router.get('/locations/next', locationController.getNextLocation);
 router.get('/locations/check/:code', locationController.checkLocationAvailability);
 router.get('/locations/nearby/:code', locationController.getLocationsNearby);
 router.patch('/locations/:id/status', locationController.updateLocationStatus);
@@ -97,6 +87,29 @@ router.patch('/orders/:id', async (req, res) => {
     res.json(order);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para estoque em recebimento
+router.get('/stock/receiving', async (req, res) => {
+  try {
+    const { getReceivingStock } = await import('../services/stockService.js');
+    const receivingStock = await getReceivingStock();
+    res.json(receivingStock);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para adicionar estoque em recebimento
+router.post('/stock/receiving', async (req, res) => {
+  try {
+    const { addStockToReceiving } = await import('../services/stockService.js');
+    const { sku, quantity, options } = req.body;
+    const stock = await addStockToReceiving(sku, quantity, options);
+    res.status(201).json(stock);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -228,21 +241,21 @@ router.post('/stock/transfer', async (req, res) => {
     // Importar o stockService para usar a função correta
     const { transferStock } = await import('../services/stockService.js');
     
-    // Primeiro, garantir que existe estoque na localização de origem
+    // Primeiro, garantir que existe estoque suficiente na localização de origem
     const Stock = await import('../models/Stock.js');
     const StockModel = Stock.default;
     
-    const fromStock = await StockModel.findOne({ 
+    let fromStock = await StockModel.findOne({ 
       sku: product.codigo, 
       locationCode: fromLocation 
     });
     
     console.log('From stock:', fromStock);
     
+    // Se não tem estoque ou estoque insuficiente, criar/atualizar o registro
     if (!fromStock || fromStock.availableQuantity < quantity) {
-      // Se não tem estoque suficiente, criar/atualizar o registro
       console.log('Creating/updating stock in from location...');
-      await StockModel.findOneAndUpdate(
+      fromStock = await StockModel.findOneAndUpdate(
         { sku: product.codigo, locationCode: fromLocation },
         { 
           quantity: Math.max(quantity, fromStock?.quantity || 0),

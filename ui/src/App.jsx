@@ -1,10 +1,9 @@
 // ui/src/App.jsx
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Package, Home, MapPin, Truck } from 'lucide-react';
+import { Package, Home, Truck } from 'lucide-react';
 import Dashboard from './pages/Dashboard.jsx';
 import Stock from './pages/Stock.jsx';
 import Picking from './pages/Picking.jsx';
-import Locations from './pages/Locations.jsx';
 
 function Navigation() {
   const location = useLocation();
@@ -55,17 +54,6 @@ function Navigation() {
                 <Truck className="w-4 h-4 mr-2" />
                 Separação
               </Link>
-              <Link
-                to="/locations"
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                  isActive('/locations')
-                    ? 'border-blue-500 text-gray-900'
-                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                }`}
-              >
-                <MapPin className="w-4 h-4 mr-2" />
-                Localizações
-              </Link>
             </div>
           </div>
         </div>
@@ -82,7 +70,6 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/stock" element={<Stock />} />
         <Route path="/picking" element={<Picking />} />
-        <Route path="/locations" element={<Locations />} />
       </Routes>
     </BrowserRouter>
   );

@@ -75,7 +75,36 @@ StockSchema.statics.findByLocation = function(locationCode) {
   return this.find({ locationCode: locationCode }).sort({ sku: 1 });
 };
 
-// Método estático para buscar total de estoque por SKU
+// Método estático para buscar produtos em recebimento (sem localização definida)
+StockSchema.statics.getReceivingStock = async function() {
+  return this.aggregate([
+    { $match: { locationCode: 'RECEBIMENTO', qualityStatus: 'GOOD' } },
+    {
+      $group: {
+        _id: '$sku',
+        totalQuantity: { $sum: '$quantity' },
+        totalReserved: { $sum: '$reservedQuantity' },
+        totalAvailable: { $sum: '$availableQuantity' },
+        batches: { $addToSet: '$batchNumber' },
+        lastUpdated: { $max: '$lastUpdated' }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        sku: '$_id',
+        totalQuantity: 1,
+        totalReserved: 1,
+        totalAvailable: 1,
+        batchCount: { $size: '$batches' },
+        lastUpdated: 1
+      }
+    },
+    { $sort: { lastUpdated: -1 } }
+  ]);
+};
+
+// Método estático para buscar total de estoque por SKU (incluindo recebimento)
 StockSchema.statics.getTotalBySku = async function(sku) {
   const result = await this.aggregate([
     { $match: { sku: sku, qualityStatus: 'GOOD' } },
@@ -85,7 +114,12 @@ StockSchema.statics.getTotalBySku = async function(sku) {
         totalQuantity: { $sum: '$quantity' },
         totalReserved: { $sum: '$reservedQuantity' },
         totalAvailable: { $sum: '$availableQuantity' },
-        locationCount: { $sum: 1 }
+        locationCount: { $sum: 1 },
+        inReceiving: {
+          $sum: {
+            $cond: [{ $eq: ['$locationCode', 'RECEBIMENTO'] }, '$quantity', 0]
+          }
+        }
       }
     }
   ]);
@@ -95,7 +129,8 @@ StockSchema.statics.getTotalBySku = async function(sku) {
     totalQuantity: 0,
     totalReserved: 0,
     totalAvailable: 0,
-    locationCount: 0
+    locationCount: 0,
+    inReceiving: 0
   };
 };
 
