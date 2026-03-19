@@ -4,22 +4,45 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import routes from './routes/index.js';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
 // Habilitar CORS
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'];
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174'],
+  origin: allowedOrigins,
   credentials: true
 }));
 
-app.use(express.json());
+// Middleware para parsing JSON com limite de tamanho
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/wmsomie', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+// Middleware de logging básico
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`);
+  });
+  next();
 });
 
+mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/wmsomie')
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch((error) => {
+    console.error('MongoDB connection error:', error);
+    process.exit(1);
+  });
+
 app.use('/api', routes);
+
+// Error handling middleware
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;

@@ -6,6 +6,7 @@ import Stock from '../models/Stock.js';
 import { callOmie } from './omieClient.js';
 import { adjustStock } from './stockService.js';
 import logger from '../utils/syncLogger.js';
+import mongoose from 'mongoose';
 
 export async function getMovementsFromOmie(startDate, endDate, productOmieId = null) {
   logger.debug('Fetching movements from Omie', { startDate, endDate, productOmieId });
@@ -37,71 +38,79 @@ export async function getMovementsFromOmie(startDate, endDate, productOmieId = n
 export async function syncMovementsFromOmie(startDate, endDate) {
   logger.info('Starting movement sync from Omie', { startDate, endDate });
   
-  const products = await Product.find({ omieId: { $exists: true, $ne: null } });
-  const locations = await Location.find();
-  const defaultLocation = locations[0];
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const products = await Product.find({ omieId: { $exists: true, $ne: null } }).session(session);
+    const locations = await Location.find().session(session);
+    const defaultLocation = locations[0];
 
-  if (!defaultLocation) {
-    const error = new Error('No default location found. Please create a location first.');
-    logger.error('Movement sync failed - no default location');
-    throw error;
-  }
+    if (!defaultLocation) {
+      const error = new Error('No default location found. Please create a location first.');
+      logger.error('Movement sync failed - no default location');
+      throw error;
+    }
 
-  let syncedCount = 0;
-  const errors = [];
+    let syncedCount = 0;
+    const errors = [];
 
-  for (const product of products) {
-    try {
-      const omieMovements = await getMovementsFromOmie(startDate, endDate, product.omieId);
-      
-      if (omieMovements && omieMovements.movimento_estoque) {
-        for (const omieMov of omieMovements.movimento_estoque) {
-          // Check if movement already exists
-          const existingMovement = await Movement.findOne({
-            omieId: omieMov.codigo_movimento_estoque
-          });
+    for (const product of products) {
+      try {
+        const omieMovements = await getMovementsFromOmie(startDate, endDate, product.omieId);
+        
+        if (omieMovements && omieMovements.movimento_estoque) {
+          for (const omieMov of omieMovements.movimento_estoque) {
+            const existingMovement = await Movement.findOne({
+              omieId: omieMov.codigo_movimento_estoque
+            }).session(session);
 
-          if (!existingMovement) {
-            // Map Omie movement types to WMS types
-            let movementType = 'TRANSFER';
-            if (omieMov.tipo_movimento === 'E') {
-              movementType = 'IN';
-            } else if (omieMov.tipo_movimento === 'S') {
-              movementType = 'OUT';
+            if (!existingMovement) {
+              let movementType = 'TRANSFER';
+              if (omieMov.tipo_movimento === 'E') {
+                movementType = 'IN';
+              } else if (omieMov.tipo_movimento === 'S') {
+                movementType = 'OUT';
+              }
+
+              const movement = await Movement.create([{
+                type: movementType,
+                product: product._id,
+                fromLocation: movementType === 'OUT' ? defaultLocation._id : null,
+                toLocation: movementType === 'IN' ? defaultLocation._id : null,
+                quantity: Math.abs(omieMov.quantidade),
+                omieId: omieMov.codigo_movimento_estoque,
+                date: new Date(omieMov.data_movimento),
+                description: omieMov.descricao || `Movimento sincronizado do Omie`
+              }], { session });
+
+              if (movementType === 'IN') {
+                await adjustStock(product._id, defaultLocation._id, Math.abs(omieMov.quantidade));
+              } else if (movementType === 'OUT') {
+                await adjustStock(product._id, defaultLocation._id, -Math.abs(omieMov.quantidade));
+              }
+
+              syncedCount++;
+              logger.logMovementSync(movement[0], 'synced_from_omie');
             }
-
-            // Create movement in WMS
-            const movement = await Movement.create({
-              type: movementType,
-              product: product._id,
-              fromLocation: movementType === 'OUT' ? defaultLocation._id : null,
-              toLocation: movementType === 'IN' ? defaultLocation._id : null,
-              quantity: Math.abs(omieMov.quantidade),
-              omieId: omieMov.codigo_movimento_estoque,
-              date: new Date(omieMov.data_movimento),
-              description: omieMov.descricao || `Movimento sincronizado do Omie`
-            });
-
-            // Update stock
-            if (movementType === 'IN') {
-              await adjustStock(product._id, defaultLocation._id, Math.abs(omieMov.quantidade));
-            } else if (movementType === 'OUT') {
-              await adjustStock(product._id, defaultLocation._id, -Math.abs(omieMov.quantidade));
-            }
-
-            syncedCount++;
-            logger.logMovementSync(movement, 'synced_from_omie');
           }
         }
+      } catch (error) {
+        errors.push({ product: product.sku, error: error.message });
+        logger.error('Failed to sync movements for product', { product: product.sku, error: error.message });
       }
-    } catch (error) {
-      errors.push({ product: product.sku, error: error.message });
-      logger.error('Failed to sync movements for product', { product: product.sku, error: error.message });
     }
-  }
 
-  logger.logSyncResult('movements_from_omie', { syncedCount, errors });
-  return { syncedCount, errors };
+    await session.commitTransaction();
+    logger.logSyncResult('movements_from_omie', { syncedCount, errors });
+    return { syncedCount, errors };
+  } catch (error) {
+    await session.abortTransaction();
+    logger.error('Movement sync transaction failed', { error: error.message });
+    throw error;
+  } finally {
+    session.endSession();
+  }
 }
 
 export async function sendMovementToOmie(movement) {
