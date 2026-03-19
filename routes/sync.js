@@ -154,6 +154,24 @@ router.post('/locations/from-omie', async (req, res) => {
   }
 });
 
+// Order sync routes
+router.post('/orders', async (req, res) => {
+  try {
+    const { syncOrders } = await import('../services/omieOrderService.js');
+    const count = await syncOrders();
+    res.json({
+      success: true,
+      syncedCount: count,
+      message: `Synced ${count} orders from Omie`
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Product sync routes
 router.post('/products/from-omie', async (req, res) => {
   try {

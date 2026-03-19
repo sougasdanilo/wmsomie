@@ -76,6 +76,18 @@ router.get('/orders/:id', async (req, res) => {
   }
 });
 
+router.delete('/orders/:id', async (req, res) => {
+  try {
+    const result = await Order.findByIdAndDelete(req.params.id);
+    if (!result) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json({ message: 'Order deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.patch('/orders/:id', async (req, res) => {
   try {
     const { status } = req.body;
@@ -85,6 +97,43 @@ router.patch('/orders/:id', async (req, res) => {
       { new: true }
     ).populate('items.product');
     res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Picking routes
+router.get('/picking', async (req, res) => {
+  try {
+    const Picking = await import('../models/Picking.js');
+    const pickingList = await Picking.default.find()
+      .populate('order')
+      .populate('items.product')
+      .populate('items.location')
+      .sort({ createdAt: -1 });
+    res.json(pickingList);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/picking/:orderId', pickingController.createPicking);
+
+router.patch('/picking/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const Picking = await import('../models/Picking.js');
+    const picking = await Picking.default.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    ).populate('order').populate('items.product').populate('items.location');
+    
+    if (!picking) {
+      return res.status(404).json({ error: 'Picking not found' });
+    }
+    
+    res.json(picking);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

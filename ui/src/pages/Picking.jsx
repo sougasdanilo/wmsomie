@@ -47,7 +47,7 @@ export default function Picking() {
   };
 
   const filteredOrders = orders.filter(order => 
-    order.omieId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (order.omieId && order.omieId.toLowerCase().includes(searchTerm.toLowerCase())) ||
     order.status.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -83,7 +83,7 @@ export default function Picking() {
             <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="font-semibold text-gray-900">Pedido #{order.omieId}</h3>
+                  <h3 className="font-semibold text-gray-900">Pedido #{order.omieId || 'Local'}</h3>
                   <p className="text-sm text-gray-600">{order.items?.length || 0} itens</p>
                 </div>
                 <div className="flex items-center">

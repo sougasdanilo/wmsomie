@@ -10,30 +10,45 @@ export async function syncOrders() {
     { pagina: 1, registros_por_pagina: 50 }
   );
 
-  const pedidos = response.pedidos || [];
+  const pedidos = response.pedido_venda_produto || [];
+  let syncedCount = 0;
 
   for (const p of pedidos) {
     const items = [];
 
-    for (const i of p.itens) {
-      const product = await Product.findOne({ omieId: i.codigo_produto });
-      if (!product) continue;
+    // Verificar se o pedido tem itens
+    if (!p.det || p.det.length === 0) {
+      console.log(`Pedido ${p.cabecalho?.codigo_pedido} não tem itens, ignorando...`);
+      continue;
+    }
+
+    for (const i of p.det || []) {
+      const product = await Product.findOne({ omieId: i.produto.codigo_produto });
+      if (!product) {
+        console.log(`Produto ${i.produto.codigo_produto} não encontrado no banco, ignorando item...`);
+        continue;
+      }
 
       items.push({
         product: product._id,
-        quantity: i.quantidade,
+        quantity: i.produto.quantidade,
       });
     }
 
-    await Order.findOneAndUpdate(
-      { omieId: p.codigo_pedido },
-      {
-        omieId: p.codigo_pedido,
-        items,
-      },
-      { upsert: true }
-    );
+    // Apenas sincronizar se tiver itens válidos
+    if (items.length > 0) {
+      await Order.findOneAndUpdate(
+        { omieId: p.cabecalho.codigo_pedido },
+        {
+          omieId: p.cabecalho.codigo_pedido,
+          items,
+        },
+        { upsert: true }
+      );
+      syncedCount++;
+      console.log(`Pedido ${p.cabecalho.codigo_pedido} sincronizado com ${items.length} itens`);
+    }
   }
 
-  return pedidos.length;
+  return syncedCount;
 }
