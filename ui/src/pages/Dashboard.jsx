@@ -75,7 +75,7 @@ export default function Dashboard() {
                   Produto: {movement.product?.name || 'N/A'}
                 </div>
                 <div className="text-sm text-gray-600">
-                  Qtd: {movement.quantity} | Local: {movement.toLocation?.name || 'Pendente'}
+                  Qtd: {movement.quantity} | Local: {movement.toLocation?.code || movement.toLocation?.description || 'Pendente'}
                 </div>
                 <div className="text-xs text-gray-500">
                   {new Date(movement.createdAt).toLocaleString('pt-BR')}
@@ -128,7 +128,7 @@ export default function Dashboard() {
                   Produto: {movement.product?.name || 'N/A'}
                 </div>
                 <div className="text-sm text-gray-600">
-                  Qtd: {movement.quantity} | Origem: {movement.fromLocation?.name || 'N/A'}
+                  Qtd: {movement.quantity} | Origem: {movement.fromLocation?.code || movement.fromLocation?.description || 'N/A'}
                 </div>
                 <div className="flex items-center mt-1">
                   <CheckCircle className="w-3 h-3 text-green-500 mr-1" />
@@ -156,7 +156,7 @@ export default function Dashboard() {
                 {movement.product?.name || 'N/A'}
               </div>
               <div className="text-xs text-gray-600 mt-1">
-                {movement.fromLocation?.name || 'N/A'} → {movement.toLocation?.name || 'N/A'}
+                {movement.fromLocation?.code || movement.fromLocation?.description || 'N/A'} → {movement.toLocation?.code || movement.toLocation?.description || 'N/A'}
               </div>
               <div className="text-xs text-purple-600 font-medium mt-1">
                 Qtd: {movement.quantity}

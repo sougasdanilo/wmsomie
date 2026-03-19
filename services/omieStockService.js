@@ -71,7 +71,20 @@ export async function syncAllStockFromOmie() {
   await syncProducts();
   
   const products = await Product.find({ omieId: { $exists: true, $ne: null } });
-  const locations = await Location.find();
+  let locations = await Location.find({ isActive: true });
+  
+  // Se não houver localizações, criar algumas padrão
+  if (locations.length === 0) {
+    console.log('No locations found, creating default locations...');
+    const { createLocationSequence } = await import('./locationService.js');
+    locations = await createLocationSequence({
+      startCode: 'AA1',
+      quantity: 10,
+      descriptionTemplate: 'Localização {code}'
+    });
+    console.log(`Created ${locations.length} default locations`);
+  }
+  
   const defaultLocation = locations[0];
 
   if (!defaultLocation) {

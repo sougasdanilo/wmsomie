@@ -21,15 +21,22 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/wmsomie')
         });
       } else {
         console.log('No locations found in database');
-        console.log('Creating default location...');
+        console.log('Creating default locations with new format...');
         
-        const defaultLocation = await Location.create({
-          code: 'DEFAULT',
-          description: 'Default location for stock operations',
-          omieId: '1'
-        });
+        // Criar algumas localizações padrão no novo formato
+        const defaultLocations = [
+          { code: 'AA1', description: 'Corredor A, Posição 1', aisle: 'AA', position: 1, level: 1 },
+          { code: 'AA2', description: 'Corredor A, Posição 2', aisle: 'AA', position: 2, level: 1 },
+          { code: 'AB1', description: 'Corredor AB, Posição 1', aisle: 'AB', position: 1, level: 1 },
+          { code: 'AB2', description: 'Corredor AB, Posição 2', aisle: 'AB', position: 2, level: 1 },
+        ];
         
-        console.log('Default location created:', defaultLocation);
+        for (const locData of defaultLocations) {
+          const location = await Location.create(locData);
+          console.log('Location created:', location);
+        }
+        
+        console.log('Default locations created successfully');
       }
     } catch (error) {
       console.error('Error checking locations:', error);

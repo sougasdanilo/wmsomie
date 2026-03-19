@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import * as stockController from '../controllers/stockController.js';
 import * as pickingController from '../controllers/pickingController.js';
+import * as locationController from '../controllers/locationController.js';
 import Movement from '../models/Movement.js';
 import Order from '../models/Order.js';
 import Stock from '../models/Stock.js';
@@ -19,6 +20,19 @@ router.post('/stock/inbound', stockController.inbound);
 router.post('/stock/outbound', stockController.outbound);
 router.post('/stock/transfer', stockController.transfer);
 router.get('/picking/:orderId', pickingController.createPicking);
+
+// Endpoints de localização
+router.post('/locations', locationController.createLocationController);
+router.post('/locations/sequence', locationController.createLocationSequenceController);
+router.get('/locations', locationController.getLocations);
+router.get('/locations/grouped', locationController.getLocationsGroupedByAisle);
+router.get('/locations/by-aisle/:aisle', locationController.getLocations);
+router.get('/locations/by-zone/:zone', locationController.getLocations);
+router.get('/locations/code/:code', locationController.getLocationByCode);
+router.get('/locations/next', locationController.getNextLocation);
+router.get('/locations/check/:code', locationController.checkLocationAvailability);
+router.get('/locations/nearby/:code', locationController.getLocationsNearby);
+router.patch('/locations/:id/status', locationController.updateLocationStatus);
 
 // Novos endpoints para a UI
 router.get('/movements', async (req, res) => {
