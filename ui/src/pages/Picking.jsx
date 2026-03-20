@@ -11,6 +11,8 @@ export default function Picking() {
   const [loading, setLoading] = useState(true);
   const [generatingPicking, setGeneratingPicking] = useState(false);
   const [error, setError] = useState('');
+  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+  const [isUnifiedPicking, setIsUnifiedPicking] = useState(false);
 
   useEffect(() => {
     loadOrders();
@@ -32,6 +34,7 @@ export default function Picking() {
     try {
       setError('');
       setGeneratingPicking(true);
+      setIsUnifiedPicking(false);
 
       // Gera picking para obter location em cada item.
       await pickingApi.createPicking(order._id);
@@ -71,13 +74,89 @@ export default function Picking() {
     }
   };
 
+  const generateUnifiedPicking = async () => {
+    const selectedOrders = orders.filter((o) => selectedOrderIds.has(o._id));
+    if (selectedOrders.length === 0) return;
+
+    try {
+      setError('');
+      setGeneratingPicking(true);
+      setIsUnifiedPicking(true);
+      setPickingList(null);
+
+      // Gera picking para cada pedido selecionado.
+      for (const ord of selectedOrders) {
+        // Pode lançar erro para algum pedido; deixamos cair no catch global.
+        // Se quiser resiliência por pedido, podemos ajustar para try/catch por item.
+        await pickingApi.createPicking(ord._id);
+      }
+
+      const pickingsRes = await pickingApi.listPickings();
+      const pickings = pickingsRes.data || [];
+
+      // Para cada pedido, pega o picking mais recente (evita retornar picking antigo).
+      const latestByOrderId = new Map();
+      for (const ord of selectedOrders) {
+        const related = pickings.filter((p) => p.order?._id === ord._id);
+        related.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        latestByOrderId.set(ord._id, related[0] || null);
+      }
+
+      // Unifica itens (agrupa por produto + local, somando quantidades).
+      const grouped = new Map();
+
+      const addItem = (item) => {
+        const productSku = item.product?.codigo || item.product?.sku || item.product?._id || 'unknown';
+        const locationKey = item.location?.code || item.location?._id || 'NO_LOCATION';
+        const key = `${productSku}|${locationKey}`;
+
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            product: item.product || null,
+            location: item.location || null,
+            quantity: 0
+          });
+        }
+
+        grouped.get(key).quantity += item.quantity || 0;
+      };
+
+      for (const ord of selectedOrders) {
+        const picking = latestByOrderId.get(ord._id);
+        if (!picking?.items) continue;
+        picking.items.forEach(addItem);
+      }
+
+      setPickingList({
+        order: { omieId: `Unificada (${selectedOrders.length} pedidos)` },
+        items: Array.from(grouped.values())
+      });
+      setSelectedOrder(selectedOrders[0]);
+    } catch (err) {
+      console.error('Error generating unified picking:', err);
+      setError(err?.response?.data?.error || err.message || 'Erro ao gerar picking unificado');
+      setIsUnifiedPicking(false);
+      setPickingList(null);
+    } finally {
+      setGeneratingPicking(false);
+    }
+  };
+
   const completePicking = async () => {
     try {
-      if (!selectedOrder) return;
-      await orderApi.updateOrderStatus(selectedOrder._id, 'DONE');
+      if (isUnifiedPicking) {
+        const ids = Array.from(selectedOrderIds);
+        if (ids.length === 0) return;
+        await Promise.all(ids.map((id) => orderApi.updateOrderStatus(id, 'DONE')));
+      } else {
+        if (!selectedOrder) return;
+        await orderApi.updateOrderStatus(selectedOrder._id, 'DONE');
+      }
       await loadOrders();
       setSelectedOrder(null);
       setPickingList(null);
+      setIsUnifiedPicking(false);
+      setSelectedOrderIds(new Set());
     } catch (error) {
       console.error('Error completing picking:', error);
       setError(error?.response?.data?.error || error.message);
@@ -104,6 +183,7 @@ export default function Picking() {
     'Local';
 
   const items = pickingList?.items || [];
+  const selectedCount = selectedOrderIds.size;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -133,28 +213,69 @@ export default function Picking() {
                 />
               </div>
 
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-xs text-gray-600">
+                  Selecionados: <span className="font-semibold">{selectedCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrderIds(new Set())}
+                    disabled={selectedCount === 0 || generatingPicking}
+                    className="px-3 py-1 text-xs border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={generateUnifiedPicking}
+                    disabled={selectedCount === 0 || generatingPicking}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Unificar
+                  </button>
+                </div>
+              </div>
+
               <div className="overflow-y-auto flex-1 pr-1 space-y-2">
                 {filteredOrders.map((order) => {
-                  const isSelected = selectedOrder?._id === order._id;
                   const disabled = order.status === 'DONE';
+                  const isChecked = selectedOrderIds.has(order._id);
 
                   return (
-                    <button
+                    <div
                       key={order._id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => generatePicking(order)}
                       className={[
-                        'w-full text-left border rounded-lg p-3 transition-shadow',
-                        disabled ? 'border-gray-200 bg-gray-50 cursor-not-allowed' : 'border-gray-200 bg-white hover:shadow-md',
-                        isSelected ? 'ring-2 ring-blue-500' : ''
+                        'w-full border rounded-lg p-3 transition-shadow',
+                        disabled ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white hover:shadow-md',
+                        isChecked ? 'ring-2 ring-blue-500' : ''
                       ].join(' ')}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-gray-900">Pedido #{order.omieId || 'Local'}</div>
-                          <div className="text-sm text-gray-600">{order.items?.length || 0} itens</div>
-                        </div>
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            disabled={disabled}
+                            checked={isChecked}
+                            onChange={() => {
+                              if (disabled) return;
+                              setSelectedOrderIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(order._id)) next.delete(order._id);
+                                else next.add(order._id);
+                                return next;
+                              });
+                              // Se o usuário estiver unificando, manter seleção pode fazer sentido,
+                              // então não alteramos `isUnifiedPicking` aqui.
+                            }}
+                            className="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                          />
+
+                          <div>
+                            <div className="font-semibold text-gray-900">Pedido #{order.omieId || 'Local'}</div>
+                            <div className="text-sm text-gray-600">{order.items?.length || 0} itens</div>
+                          </div>
+                        </label>
 
                         <div className="flex items-center">
                           {order.status === 'PENDING' ? (
@@ -182,11 +303,21 @@ export default function Picking() {
                         </div>
                       </div>
 
-                      <div className="mt-3 flex items-center text-sm text-blue-700">
-                        <Eye className="w-4 h-4 mr-1" />
-                        <span>{disabled ? 'Finalizado' : generatingPicking && isSelected ? 'Gerando...' : 'Selecionar'}</span>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="text-sm text-blue-700">
+                          <Eye className="w-4 h-4 inline-block mr-1 -mt-0.5 text-blue-700" />
+                          <span>{disabled ? 'Finalizado' : 'Ver picking'}</span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={disabled || generatingPicking}
+                          onClick={() => generatePicking(order)}
+                          className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Abrir
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
 
@@ -214,7 +345,7 @@ export default function Picking() {
                   <div className="flex items-center">
                     <Package className="w-6 h-6 text-green-600 mr-2" />
                     <h2 className="text-xl font-semibold text-gray-800">
-                      Lista de Separação - Pedido #{orderNumber}
+                      {isUnifiedPicking ? `Lista de Separação Unificada` : `Lista de Separação - Pedido #${orderNumber}`}
                     </h2>
                   </div>
 
@@ -315,7 +446,7 @@ export default function Picking() {
           </h2>
 
           <div className="text-sm text-gray-700 mb-6">
-            Pedido: <span className="font-semibold">{orderNumber}</span>
+            {isUnifiedPicking ? 'Pedidos' : 'Pedido'}: <span className="font-semibold">{orderNumber}</span>
             <span className="mx-2">|</span>
             Emitido em: <span className="font-semibold">{new Date().toLocaleString('pt-BR')}</span>
           </div>
