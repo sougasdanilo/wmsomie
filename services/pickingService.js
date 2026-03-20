@@ -44,7 +44,7 @@ export async function generatePicking(orderId) {
       });
     }
 
-    const sortedStocks = stocks; // Temporariamente sem ordenação
+    const sortedStocks = sortLocations(stocks);
 
     for (const s of sortedStocks) {
       if (remaining <= 0) break;

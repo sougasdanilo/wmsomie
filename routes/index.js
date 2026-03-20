@@ -236,7 +236,7 @@ router.patch('/stock/:productId/location', async (req, res) => {
     if (!location) {
       location = await Location.create({
         code: locationId,
-        description: `Localização ${locationId}`
+        description: `${locationId}`
       });
     }
 

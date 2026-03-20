@@ -3,6 +3,96 @@ import { useState, useEffect } from 'react';
 import { Package, MapPin, CheckCircle, Clock, Search, Play, Eye, Printer } from 'lucide-react';
 import { orderApi, pickingApi } from '../services/api';
 
+// Função para ordenar itens por localização
+function sortItemsByLocation(items) {
+  return items.sort((a, b) => {
+    try {
+      const locA = a.location?.code || '';
+      const locB = b.location?.code || '';
+      
+      if (!locA && !locB) return 0;
+      if (!locA) return 1; // Item sem localização vai para o final
+      if (!locB) return -1; // Item sem localização vai para o final
+      
+      // Parse dos códigos de localização
+      const parseCode = (code) => {
+        const trimmed = code.trim().toUpperCase();
+        
+        // Regex para formatos comuns
+        const patterns = [
+          // Formato: AA1, AB2, CD3 (letras + números)
+          /^([A-Z]+)(\d+)$/,
+          // Formato: RACK-01-POS-A
+          /^.*?(\d+).*?([A-Z]+).*?(\d+)$/,
+          // Formato: PISO1-A1
+          /^(\d+)-([A-Z]+)(\d+)$/,
+          // Formato: 1-A-01
+          /^(\d+)-([A-Z]+)-(\d+)$/
+        ];
+        
+        for (const pattern of patterns) {
+          const match = trimmed.match(pattern);
+          if (match) {
+            if (match.length === 3) {
+              // Formato simples: letras + números
+              return {
+                aisle: match[1],
+                position: parseInt(match[2]),
+                level: 0,
+                zone: null
+              };
+            } else if (match.length === 4) {
+              // Formato complexo: zona + corredor + posição
+              return {
+                zone: match[1],
+                aisle: match[2],
+                position: parseInt(match[3]),
+                level: 0
+              };
+            }
+          }
+        }
+        
+        // Fallback
+        return {
+          aisle: trimmed,
+          position: 0,
+          level: 0,
+          zone: null
+        };
+      };
+      
+      const parsedA = parseCode(locA);
+      const parsedB = parseCode(locB);
+      
+      // Primeiro ordena por zona (se existir)
+      if (parsedA.zone && parsedB.zone) {
+        const zoneCompare = parsedA.zone.localeCompare(parsedB.zone);
+        if (zoneCompare !== 0) return zoneCompare;
+      } else if (parsedA.zone) {
+        return 1;
+      } else if (parsedB.zone) {
+        return -1;
+      }
+      
+      // Depois por corredor
+      const aisleCompare = parsedA.aisle.localeCompare(parsedB.aisle);
+      if (aisleCompare !== 0) return aisleCompare;
+      
+      // Depois por posição
+      if (parsedA.position !== parsedB.position) {
+        return parsedA.position - parsedB.position;
+      }
+      
+      // Finalmente por nível
+      return parsedA.level - parsedB.level;
+    } catch (error) {
+      // Fallback para ordenação alfabética
+      return (a.location?.code || '').localeCompare(b.location?.code || '');
+    }
+  });
+}
+
 export default function Picking() {
   const [orders, setOrders] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -182,7 +272,7 @@ export default function Picking() {
     selectedOrder?.omieId ||
     'Local';
 
-  const items = pickingList?.items || [];
+  const items = sortItemsByLocation(pickingList?.items || []);
   const selectedCount = selectedOrderIds.size;
 
   return (

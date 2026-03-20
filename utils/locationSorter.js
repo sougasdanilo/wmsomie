@@ -5,10 +5,24 @@ import { parseLocationCode } from './locationGenerator.js';
 export function sortLocations(locations) {
   return locations.sort((a, b) => {
     try {
-      const locA = parseLocationCode(a.code || a);
-      const locB = parseLocationCode(b.code || b);
+      // Extrai o código da localização de forma segura
+      const codeA = typeof a === 'string' ? a : (a?.code || '');
+      const codeB = typeof b === 'string' ? b : (b?.code || '');
       
-      // Primeiro ordena por corredor (aisle)
+      const locA = parseLocationCode(codeA);
+      const locB = parseLocationCode(codeB);
+      
+      // Primeiro ordena por zona (se existir)
+      if (locA.zone && locB.zone) {
+        const zoneCompare = locA.zone.localeCompare(locB.zone);
+        if (zoneCompare !== 0) return zoneCompare;
+      } else if (locA.zone) {
+        return 1; // A tem zona, B não -> B vem primeiro
+      } else if (locB.zone) {
+        return -1; // B tem zona, A não -> A vem primeiro
+      }
+      
+      // Depois ordena por corredor (aisle)
       const aisleCompare = locA.aisle.localeCompare(locB.aisle);
       if (aisleCompare !== 0) return aisleCompare;
       
@@ -21,7 +35,9 @@ export function sortLocations(locations) {
       return locA.level - locB.level;
     } catch (error) {
       // Fallback para ordenação alfabética se código for inválido
-      return (a.code || a).localeCompare(b.code || b);
+      const codeA = typeof a === 'string' ? a : (a?.code || '');
+      const codeB = typeof b === 'string' ? b : (b?.code || '');
+      return codeA.localeCompare(codeB);
     }
   });
 }
@@ -36,7 +52,9 @@ export function groupLocationsByAisle(locations) {
   
   locations.forEach(location => {
     try {
-      const parsed = parseLocationCode(location.code || location);
+      // Extrai o código de forma segura
+      const code = typeof location === 'string' ? location : (location?.code || '');
+      const parsed = parseLocationCode(code);
       const aisle = parsed.aisle;
       
       if (!grouped[aisle]) {
