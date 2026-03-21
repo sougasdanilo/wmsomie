@@ -31,15 +31,42 @@ export async function sendStockToOmie(userId) {
         continue;
       }
 
-      await callOmieWithUser(
-        userId,
-        'estoque/ajuste/',
-        'AjustarEstoque',
-        {
-          codigo_produto: product.omieId,
-          quantidade: stock.totalQuantity,
+      // First get current stock from Omie
+      let currentOmieStock = 0;
+      try {
+        const omieStockData = await getStockFromOmie(userId, product.omieId);
+        if (omieStockData && omieStockData.saldo !== undefined) {
+          currentOmieStock = omieStockData.saldo;
+        } else if (omieStockData && omieStockData.fisico !== undefined) {
+          currentOmieStock = omieStockData.fisico;
         }
-      );
+      } catch (error) {
+        logger.warn(`Could not get current Omie stock for ${stock._id}, assuming 0`);
+      }
+
+      // Calculate difference
+      const difference = stock.totalQuantity - currentOmieStock;
+      
+      if (difference !== 0) {
+        await callOmieWithUser(
+          userId,
+          'estoque/movimento/',
+          'IncluirMovimentoEstoque',
+          {
+            codigo_local_estoque: 1, // Default warehouse
+            id_prod: parseInt(product.omieId),
+            data_movimento: new Date().toLocaleDateString('pt-BR'),
+            tipo_movimento: difference > 0 ? 'E' : 'S', // E = Entrada, S = Saída
+            quantidade: Math.abs(difference),
+            valor_unitario: 0,
+            motivo: 'Ajuste de Estoque WMS'
+          }
+        );
+        
+        logger.info(`Adjusted stock for ${stock._id}: ${currentOmieStock} → ${stock.totalQuantity} (${difference > 0 ? '+' : ''}${difference})`);
+      } else {
+        logger.info(`Stock already synchronized for ${stock._id}: ${stock.totalQuantity}`);
+      }
       
       successCount++;
       logger.logStockSync(product, 'sent_to_omie', stock.totalQuantity);
@@ -259,19 +286,23 @@ export async function adjustStockInOmie(userId, productOmieId, quantity, reason 
   try {
     const result = await callOmieWithUser(
       userId,
-      'estoque/ajuste/',
-      'AjustarEstoque',
+      'estoque/movimento/',
+      'IncluirMovimentoEstoque',
       {
-        codigo_produto: productOmieId,
-        quantidade: quantity,
-        motivo: reason,
+        codigo_local_estoque: 1, // Default warehouse
+        id_prod: parseInt(productOmieId),
+        data_movimento: new Date().toLocaleDateString('pt-BR'),
+        tipo_movimento: quantity > 0 ? 'E' : 'S', // E = Entrada, S = Saída
+        quantidade: Math.abs(quantity),
+        valor_unitario: 0,
+        motivo: reason
       }
     );
 
-    logger.logApiCall('AjustarEstoque', 'estoque/ajuste/', { productOmieId, quantity, reason }, result);
+    logger.logApiCall('IncluirMovimentoEstoque', 'estoque/movimento/', { productOmieId, quantity, reason }, result);
     return result;
   } catch (error) {
-    logger.logApiCall('AjustarEstoque', 'estoque/ajuste/', { productOmieId, quantity, reason }, null, error);
+    logger.logApiCall('IncluirMovimentoEstoque', 'estoque/movimento/', { productOmieId, quantity, reason }, null, error);
     throw error;
   }
 }
