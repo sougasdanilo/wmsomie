@@ -5,10 +5,9 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "start": "cd ui && npm run build && cd .. && node server.js",
     "dev": "nodemon server.js",
-    "start": "node server.js",
     "dev:all": "node start-dev.js",
-    "start:all": "node start-prod.js",
     "install:all": "npm install && cd ui && npm install",
     "stop": "node stop.js",
     "seed": "node scripts/seed.js",
