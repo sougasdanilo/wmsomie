@@ -3,12 +3,12 @@ import Movement from '../models/Movement.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
 import Stock from '../models/Stock.js';
-import { callOmie } from './omieClient.js';
+import { callOmieWithUser } from './omieClient.js';
 import { adjustStock } from './stockService.js';
 import logger from '../utils/syncLogger.js';
 import mongoose from 'mongoose';
 
-export async function getMovementsFromOmie(startDate, endDate, productOmieId = null) {
+export async function getMovementsFromOmie(userId, startDate, endDate, productOmieId = null) {
   logger.debug('Fetching movements from Omie', { startDate, endDate, productOmieId });
   
   try {
@@ -21,7 +21,8 @@ export async function getMovementsFromOmie(startDate, endDate, productOmieId = n
       params.codigo_produto = productOmieId;
     }
 
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'estoque/movestoque/',
       'ConsultarMovimentoEstoque',
       params
@@ -35,8 +36,8 @@ export async function getMovementsFromOmie(startDate, endDate, productOmieId = n
   }
 }
 
-export async function syncMovementsFromOmie(startDate, endDate) {
-  logger.info('Starting movement sync from Omie', { startDate, endDate });
+export async function syncMovementsFromOmie(userId, startDate, endDate) {
+  logger.info(`Starting movement sync from Omie for user ${userId}`, { startDate, endDate });
   
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -57,7 +58,7 @@ export async function syncMovementsFromOmie(startDate, endDate) {
 
     for (const product of products) {
       try {
-        const omieMovements = await getMovementsFromOmie(startDate, endDate, product.omieId);
+        const omieMovements = await getMovementsFromOmie(userId, startDate, endDate, product.omieId);
         
         if (omieMovements && omieMovements.movimento_estoque) {
           for (const omieMov of omieMovements.movimento_estoque) {
@@ -113,7 +114,7 @@ export async function syncMovementsFromOmie(startDate, endDate) {
   }
 }
 
-export async function sendMovementToOmie(movement) {
+export async function sendMovementToOmie(userId, movement) {
   logger.debug('Sending movement to Omie', { movementId: movement._id, type: movement.type });
   
   try {
@@ -153,7 +154,7 @@ export async function sendMovementToOmie(movement) {
 
       case 'TRANSFER':
         // For transfers, we create an OUT movement followed by an IN movement
-        await createTransferMovements(movement, product);
+        await createTransferMovements(userId, movement, product);
         logger.logMovementSync(movement, 'sent_to_omie');
         return { success: true, message: 'Transfer created as two movements' };
 
@@ -163,7 +164,7 @@ export async function sendMovementToOmie(movement) {
         throw error;
     }
 
-    const result = await callOmie(endpoint, callType, params);
+    const result = await callOmieWithUser(userId, endpoint, callType, params);
     
     // Update movement with Omie ID
     if (result.codigo_movimento_estoque) {
@@ -181,12 +182,13 @@ export async function sendMovementToOmie(movement) {
   }
 }
 
-async function createTransferMovements(movement, product) {
+async function createTransferMovements(userId, movement, product) {
   logger.debug('Creating transfer movements in Omie', { movementId: movement._id });
   
   try {
     // Create OUT movement
-    const outResult = await callOmie(
+    const outResult = await callOmieWithUser(
+      userId,
       'estoque/movestoque/',
       'IncluirMovimentoEstoque',
       {
@@ -199,7 +201,8 @@ async function createTransferMovements(movement, product) {
     );
 
     // Create IN movement
-    const inResult = await callOmie(
+    const inResult = await callOmieWithUser(
+      userId,
       'estoque/movestoque/',
       'IncluirMovimentoEstoque',
       {
@@ -229,11 +232,12 @@ async function createTransferMovements(movement, product) {
   }
 }
 
-export async function getLocationsFromOmie() {
+export async function getLocationsFromOmie(userId) {
   logger.debug('Fetching locations from Omie');
   
   try {
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'estoque/local/',
       'ListarLocaisEstoque',
       {}
@@ -247,11 +251,11 @@ export async function getLocationsFromOmie() {
   }
 }
 
-export async function syncLocationsFromOmie() {
-  logger.info('Starting location sync from Omie');
+export async function syncLocationsFromOmie(userId) {
+  logger.info(`Starting location sync from Omie for user ${userId}`);
   
   try {
-    const omieLocations = await getLocationsFromOmie();
+    const omieLocations = await getLocationsFromOmie(userId);
     let syncedCount = 0;
 
     if (omieLocations && omieLocations.locais_estoque) {

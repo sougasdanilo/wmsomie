@@ -1,5 +1,6 @@
 // src/routes/sync.js
 import express from 'express';
+import { protect } from '../middleware/auth.js';
 import { 
   syncAllStockFromOmie, 
   sendStockToOmie, 
@@ -18,9 +19,9 @@ import Movement from '../models/Movement.js';
 const router = express.Router();
 
 // Stock sync routes
-router.post('/stock/from-omie', async (req, res) => {
+router.post('/stock/from-omie', protect, async (req, res) => {
   try {
-    const result = await syncAllStockFromOmie();
+    const result = await syncAllStockFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,
@@ -35,9 +36,9 @@ router.post('/stock/from-omie', async (req, res) => {
   }
 });
 
-router.post('/stock/to-omie', async (req, res) => {
+router.post('/stock/to-omie', protect, async (req, res) => {
   try {
-    const count = await sendStockToOmie();
+    const count = await sendStockToOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -51,10 +52,10 @@ router.post('/stock/to-omie', async (req, res) => {
   }
 });
 
-router.get('/stock/:productId', async (req, res) => {
+router.get('/stock/:productId', protect, async (req, res) => {
   try {
     const { productId } = req.params;
-    const stock = await getStockFromOmie(productId);
+    const stock = await getStockFromOmie(req.user._id, productId);
     res.json({
       success: true,
       data: stock
@@ -67,10 +68,10 @@ router.get('/stock/:productId', async (req, res) => {
   }
 });
 
-router.post('/stock/adjust', async (req, res) => {
+router.post('/stock/adjust', protect, async (req, res) => {
   try {
     const { productId, quantity, reason } = req.body;
-    const result = await adjustStockInOmie(productId, quantity, reason);
+    const result = await adjustStockInOmie(req.user._id, productId, quantity, reason);
     res.json({
       success: true,
       data: result,
@@ -85,7 +86,7 @@ router.post('/stock/adjust', async (req, res) => {
 });
 
 // Movement sync routes
-router.post('/movements/from-omie', async (req, res) => {
+router.post('/movements/from-omie', protect, async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
     
@@ -96,7 +97,7 @@ router.post('/movements/from-omie', async (req, res) => {
       });
     }
 
-    const result = await syncMovementsFromOmie(startDate, endDate);
+    const result = await syncMovementsFromOmie(req.user._id, startDate, endDate);
     res.json({
       success: true,
       syncedCount: result.syncedCount,
@@ -111,7 +112,7 @@ router.post('/movements/from-omie', async (req, res) => {
   }
 });
 
-router.post('/movements/to-omie/:movementId', async (req, res) => {
+router.post('/movements/to-omie/:movementId', protect, async (req, res) => {
   try {
     const { movementId } = req.params;
     const movement = await Movement.findById(movementId).populate('product');
@@ -123,7 +124,7 @@ router.post('/movements/to-omie/:movementId', async (req, res) => {
       });
     }
 
-    const result = await sendMovementToOmie(movement);
+    const result = await sendMovementToOmie(req.user._id, movement);
     res.json({
       success: true,
       data: result,
@@ -138,9 +139,9 @@ router.post('/movements/to-omie/:movementId', async (req, res) => {
 });
 
 // Location sync routes
-router.post('/locations/from-omie', async (req, res) => {
+router.post('/locations/from-omie', protect, async (req, res) => {
   try {
-    const count = await syncLocationsFromOmie();
+    const count = await syncLocationsFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -155,10 +156,10 @@ router.post('/locations/from-omie', async (req, res) => {
 });
 
 // Order sync routes
-router.post('/orders', async (req, res) => {
+router.post('/orders', protect, async (req, res) => {
   try {
     const { syncOrders } = await import('../services/omieOrderService.js');
-    const count = await syncOrders();
+    const count = await syncOrders(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -173,9 +174,9 @@ router.post('/orders', async (req, res) => {
 });
 
 // Product sync routes
-router.post('/products/from-omie', async (req, res) => {
+router.post('/products/from-omie', protect, async (req, res) => {
   try {
-    const count = await syncProducts();
+    const count = await syncProducts(req.user._id);
     res.json({
       success: true,
       syncedCount: count,
@@ -190,7 +191,7 @@ router.post('/products/from-omie', async (req, res) => {
 });
 
 // Full sync route
-router.post('/full', async (req, res) => {
+router.post('/full', protect, async (req, res) => {
   try {
     const results = {
       products: { syncedCount: 0, errors: [] },
@@ -201,21 +202,21 @@ router.post('/full', async (req, res) => {
 
     // Sync products
     try {
-      results.products.syncedCount = await syncProducts();
+      results.products.syncedCount = await syncProducts(req.user._id);
     } catch (error) {
       results.products.errors.push(error.message);
     }
 
     // Sync locations
     try {
-      results.locations.syncedCount = await syncLocationsFromOmie();
+      results.locations.syncedCount = await syncLocationsFromOmie(req.user._id);
     } catch (error) {
       results.locations.errors.push(error.message);
     }
 
     // Sync stock
     try {
-      const stockResult = await syncAllStockFromOmie();
+      const stockResult = await syncAllStockFromOmie(req.user._id);
       results.stock.syncedCount = stockResult.syncedCount;
       results.stock.errors = stockResult.errors;
     } catch (error) {
@@ -227,6 +228,7 @@ router.post('/full', async (req, res) => {
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
       const movementResult = await syncMovementsFromOmie(
+        req.user._id,
         startDate.toISOString().split('T')[0],
         endDate.toISOString().split('T')[0]
       );

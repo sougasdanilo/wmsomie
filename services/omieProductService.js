@@ -1,10 +1,10 @@
 // src/services/omieProductService.js
 import Product from '../models/Product.js';
-import { callOmie } from './omieClient.js';
+import { callOmieWithUser } from './omieClient.js';
 import logger from '../utils/syncLogger.js';
 
-export async function syncProducts() {
-  logger.info('Starting product sync from Omie');
+export async function syncProducts(userId) {
+  logger.info(`Starting product sync from Omie for user ${userId}`);
   
   let allProducts = [];
   let page = 1;
@@ -17,7 +17,8 @@ export async function syncProducts() {
     while (hasMore) {
       logger.debug(`Fetching products page ${page}`);
       
-      const response = await callOmie(
+      const response = await callOmieWithUser(
+        userId,
         'geral/produtos/',
         'ListarProdutos',
         { 
@@ -70,11 +71,12 @@ export async function syncProducts() {
   }
 }
 
-export async function getProductFromOmie(productOmieId) {
+export async function getProductFromOmie(userId, productOmieId) {
   logger.debug(`Fetching product from Omie: ${productOmieId}`);
   
   try {
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'geral/produtos/',
       'ConsultarProduto',
       {
@@ -90,11 +92,12 @@ export async function getProductFromOmie(productOmieId) {
   }
 }
 
-export async function searchProductsInOmie(query = '') {
+export async function searchProductsInOmie(userId, query = '') {
   logger.debug(`Searching products in Omie: ${query}`);
   
   try {
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'geral/produtos/',
       'ListarProdutos',
       { 
@@ -114,11 +117,12 @@ export async function searchProductsInOmie(query = '') {
   }
 }
 
-export async function syncProductFromOmie(productCode) {
+export async function syncProductFromOmie(userId, productCode) {
   try {
     logger.debug(`Syncing individual product ${productCode} from Omie`);
     
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'geral/produtos/',
       'ConsultarProduto',
       {

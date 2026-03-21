@@ -354,7 +354,7 @@ router.post('/stock/sync-with-omie', protect, async (req, res) => {
     // Importar o serviço de sincronização
     const { syncAllStockFromOmie } = await import('../services/omieStockService.js');
     
-    const result = await syncAllStockFromOmie();
+    const result = await syncAllStockFromOmie(req.user._id);
     res.json({
       success: true,
       syncedCount: result.syncedCount,

@@ -11,6 +11,7 @@ const WebhookEventSchema = new mongoose.Schema({
   
   // Metadados do webhook
   appId: { type: String, required: true, trim: true }, // ID do aplicativo Omie
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // ID do usuário
   timestamp: { type: Date, required: true }, // Timestamp do evento
   
   // Status de processamento

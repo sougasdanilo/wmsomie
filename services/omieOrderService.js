@@ -1,10 +1,11 @@
 // src/services/omieOrderService.js
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
-import { callOmie } from './omieClient.js';
+import { callOmieWithUser } from './omieClient.js';
 
-export async function syncOrders() {
-  const response = await callOmie(
+export async function syncOrders(userId) {
+  const response = await callOmieWithUser(
+    userId,
     'produtos/pedido/',
     'ListarPedidos',
     { pagina: 1, registros_por_pagina: 50 }
@@ -53,11 +54,12 @@ export async function syncOrders() {
   return syncedCount;
 }
 
-export async function syncOrderFromOmie(orderCode) {
+export async function syncOrderFromOmie(userId, orderCode) {
   try {
     console.log(`Syncing order ${orderCode} from Omie`);
     
-    const response = await callOmie(
+    const response = await callOmieWithUser(
+      userId,
       'produtos/pedido/',
       'ConsultarPedido',
       { codigo_pedido: orderCode }

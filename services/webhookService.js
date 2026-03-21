@@ -2,10 +2,34 @@
 import WebhookEvent from '../models/WebhookEvent.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import User from '../models/User.js';
 import { syncProductFromOmie } from './omieProductService.js';
 import { syncOrderFromOmie } from './omieOrderService.js';
 
 class WebhookService {
+  /**
+   * Encontra o usuário baseado no appKey do webhook
+   */
+  async findUserByAppKey(appKey) {
+    if (!appKey) {
+      console.warn('No appKey found in webhook payload');
+      return null;
+    }
+    
+    const user = await User.findOne({ 'omieConfig.appKey': appKey });
+    if (!user) {
+      console.warn(`No user found for appKey: ${appKey}`);
+      return null;
+    }
+    
+    if (!user.omieConfig.isConfigured) {
+      console.warn(`User ${user._id} has Omie credentials not configured`);
+      return null;
+    }
+    
+    return user;
+  }
+
   /**
    * Processa um evento recebido do webhook da Omie
    * @param {Object} eventData - Dados do evento recebido
@@ -15,18 +39,25 @@ class WebhookService {
     try {
       console.log('Processing webhook event:', eventData.event);
       
+      // Encontrar o usuário baseado no appKey
+      const user = await this.findUserByAppKey(eventData.appKey);
+      if (!user) {
+        throw new Error('No valid user found for this webhook');
+      }
+      
       // Salvar o evento no banco primeiro (recomendação da Omie)
       const webhookEvent = await WebhookEvent.create({
         eventType: eventData.topic, // Corrigido: usar topic em vez de event
         eventId: eventData.id || `${Date.now()}-${Math.random()}`,
         payload: eventData,
         appId: eventData.appKey || process.env.OMIE_APP_ID, // Corrigido: usar appKey em vez de appId
+        userId: user._id, // Adicionar userId para rastreamento
         timestamp: new Date(eventData.timestamp || Date.now()),
         status: 'received'
       });
 
       // Processar o evento de forma assíncrona
-      this.processEventAsync(webhookEvent).catch(error => {
+      this.processEventAsync(webhookEvent, user._id).catch(error => {
         console.error('Error processing webhook event asynchronously:', error);
       });
 
@@ -45,8 +76,9 @@ class WebhookService {
   /**
    * Processa um evento de forma assíncrona
    * @param {WebhookEvent} webhookEvent - Evento salvo no banco
+   * @param {String} userId - ID do usuário
    */
-  async processEventAsync(webhookEvent) {
+  async processEventAsync(webhookEvent, userId) {
     try {
       // Atualizar status para processing
       webhookEvent.status = 'processing';
@@ -60,7 +92,7 @@ class WebhookService {
         case 'produto.alterado':
         case 'produto.excluido':
         case 'produto.ajustado': // Adicionado para ajuste de estoque
-          await this.handleProductEvent(eventType, payload, webhookEvent);
+          await this.handleProductEvent(eventType, payload, webhookEvent, userId);
           break;
           
         case 'pedido.incluido':
@@ -68,13 +100,13 @@ class WebhookService {
         case 'pedido.excluido':
         case 'pedido.confirmado':
         case 'pedido.cancelado':
-          await this.handleOrderEvent(eventType, payload, webhookEvent);
+          await this.handleOrderEvent(eventType, payload, webhookEvent, userId);
           break;
           
         case 'estoque.baixado':
         case 'estoque.acrescido':
         case 'estoque.transferido':
-          await this.handleStockEvent(eventType, payload, webhookEvent);
+          await this.handleStockEvent(eventType, payload, webhookEvent, userId);
           break;
           
         default:
@@ -91,7 +123,7 @@ class WebhookService {
   /**
    * Manipula eventos de produto
    */
-  async handleProductEvent(eventType, payload, webhookEvent) {
+  async handleProductEvent(eventType, payload, webhookEvent, userId) {
     // Para ajuste de estoque, o ID do produto está em id_prod
     const productCode = payload.codigo_produto || payload.id_prod;
     
@@ -103,7 +135,7 @@ class WebhookService {
       case 'produto.incluido':
       case 'produto.alterado':
         console.log(`Syncing product ${productCode} from Omie`);
-        await syncProductFromOmie(productCode);
+        await syncProductFromOmie(userId, productCode);
         break;
         
       case 'produto.excluido':
@@ -130,7 +162,7 @@ class WebhookService {
           // Usar o omieId para sincronizar com a Omie
           if (product.omieId) {
             console.log(`Syncing product ${productCode} (Omie ID: ${product.omieId}) from Omie`);
-            await syncProductFromOmie(product.omieId);
+            await syncProductFromOmie(userId, product.omieId);
           } else {
             console.warn(`Product ${productCode} has no omieId, cannot sync from Omie`);
           }
@@ -146,7 +178,7 @@ class WebhookService {
   /**
    * Manipula eventos de pedido
    */
-  async handleOrderEvent(eventType, payload, webhookEvent) {
+  async handleOrderEvent(eventType, payload, webhookEvent, userId) {
     const orderCode = payload.codigo_pedido;
     
     if (!orderCode) {
@@ -157,7 +189,7 @@ class WebhookService {
       case 'pedido.incluido':
       case 'pedido.alterado':
         console.log(`Syncing order ${orderCode} from Omie`);
-        const syncedOrder = await syncOrderFromOmie(orderCode);
+        const syncedOrder = await syncOrderFromOmie(userId, orderCode);
         
         // Se o pedido já estiver confirmado na Omie, gerar picking
         if (syncedOrder && syncedOrder.status === 'confirmed') {
@@ -175,7 +207,7 @@ class WebhookService {
         console.log(`Processing confirmed order ${orderCode} - generating picking`);
         
         // Primeiro sincronizar o pedido
-        await syncOrderFromOmie(orderCode);
+        await syncOrderFromOmie(userId, orderCode);
         
         // Depois gerar o picking automaticamente
         const order = await Order.findOne({ omieId: orderCode });
@@ -214,7 +246,7 @@ class WebhookService {
   /**
    * Manipula eventos de estoque
    */
-  async handleStockEvent(eventType, payload, webhookEvent) {
+  async handleStockEvent(eventType, payload, webhookEvent, userId) {
     const productCode = payload.codigo_produto;
     
     if (!productCode) {
@@ -241,7 +273,7 @@ class WebhookService {
     // Usar o omieId para sincronizar com a Omie
     if (product.omieId) {
       console.log(`Syncing product ${productCode} (Omie ID: ${product.omieId}) from Omie`);
-      await syncProductFromOmie(product.omieId);
+      await syncProductFromOmie(userId, product.omieId);
     } else {
       console.warn(`Product ${productCode} has no omieId, cannot sync from Omie`);
     }

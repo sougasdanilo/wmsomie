@@ -2,11 +2,11 @@
 import Stock from '../models/Stock.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
-import { callOmie } from './omieClient.js';
+import { callOmieWithUser } from './omieClient.js';
 import logger from '../utils/syncLogger.js';
 
-export async function sendStockToOmie() {
-  logger.info('Starting stock sync to Omie');
+export async function sendStockToOmie(userId) {
+  logger.info(`Starting stock sync to Omie for user ${userId}`);
   
   // Buscar produtos com estoque local
   const stockAggregates = await Stock.aggregate([
@@ -31,7 +31,8 @@ export async function sendStockToOmie() {
         continue;
       }
 
-      await callOmie(
+      await callOmieWithUser(
+        userId,
         'estoque/ajuste/',
         'AjustarEstoque',
         {
@@ -52,12 +53,13 @@ export async function sendStockToOmie() {
   return successCount;
 }
 
-export async function getStockFromOmie(productOmieId) {
+export async function getStockFromOmie(userId, productOmieId) {
   logger.debug(`Fetching stock from Omie for product ${productOmieId}`);
   
   try {
     // Primeiro tenta buscar pelo ID do produto
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'estoque/consulta/',
       'PosicaoEstoque',
       {
@@ -74,7 +76,8 @@ export async function getStockFromOmie(productOmieId) {
     
     // Se falhar, tenta listar posição de estoque geral
     try {
-      const listResult = await callOmie(
+      const listResult = await callOmieWithUser(
+        userId,
         'estoque/consulta/',
         'ListarPosEstoque',
         {
@@ -107,14 +110,14 @@ export async function getStockFromOmie(productOmieId) {
   }
 }
 
-export async function syncAllStockFromOmie() {
-  logger.info('Starting full stock sync from Omie');
+export async function syncAllStockFromOmie(userId) {
+  logger.info(`Starting full stock sync from Omie for user ${userId}`);
   
   // Importar produtos para garantir que temos os dados mais recentes
   const { syncProducts } = await import('./omieProductService.js');
   
   logger.info('Syncing products first to get latest data...');
-  await syncProducts();
+  await syncProducts(userId);
   
   const products = await Product.find({ omieId: { $exists: true, $ne: null }, isActive: true });
   
@@ -139,7 +142,7 @@ export async function syncAllStockFromOmie() {
       let stockQuantity = null;
       
       try {
-        const omieStock = await getStockFromOmie(product.omieId);
+        const omieStock = await getStockFromOmie(userId, product.omieId);
         
         // Extrair quantidade do campo correto 'saldo'
         if (omieStock && omieStock.saldo !== undefined) {
@@ -222,12 +225,13 @@ export async function syncAllStockFromOmie() {
   return { syncedCount, errors };
 }
 
-export async function getStockMovementsFromOmie(productOmieId, startDate, endDate) {
+export async function getStockMovementsFromOmie(userId, productOmieId, startDate, endDate) {
   logger.debug(`Fetching stock movements from Omie for product ${productOmieId}`);
   
   try {
     // Usar o método correto para listar movimentos
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'estoque/consulta/',
       'ListarMovimentoEstoque',
       {
@@ -249,11 +253,12 @@ export async function getStockMovementsFromOmie(productOmieId, startDate, endDat
   }
 }
 
-export async function adjustStockInOmie(productOmieId, quantity, reason = 'Ajuste WMS') {
+export async function adjustStockInOmie(userId, productOmieId, quantity, reason = 'Ajuste WMS') {
   logger.info(`Adjusting stock in Omie for product ${productOmieId}`, { quantity, reason });
   
   try {
-    const result = await callOmie(
+    const result = await callOmieWithUser(
+      userId,
       'estoque/ajuste/',
       'AjustarEstoque',
       {
