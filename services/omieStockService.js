@@ -1,154 +1,91 @@
-// src/services/omieStockService.js
 import Stock from '../models/Stock.js';
 import Product from '../models/Product.js';
 import Location from '../models/Location.js';
 import { callOmieWithUser } from './omieClient.js';
 import logger from '../utils/syncLogger.js';
 
-export async function sendStockToOmie(userId) {
-  logger.info(`Starting stock sync to Omie for user ${userId}`);
-  
-  // Buscar produtos com estoque local
-  const stockAggregates = await Stock.aggregate([
-    { $match: { quantity: { $gt: 0 }, qualityStatus: 'GOOD' } },
-    { 
-      $group: {
-        _id: '$sku',
-        totalQuantity: { $sum: '$quantity' }
-      }
-    }
-  ]);
-  
-  let successCount = 0;
-  let errorCount = 0;
+// 🔁 utils
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  for (const stock of stockAggregates) {
+async function callOmieWithRetry(userId, endpoint, action, params, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      // Buscar produto para obter omieId
-      const product = await Product.findOne({ codigo: stock._id });
-      if (!product || !product.omieId) {
-        logger.warn(`Product ${stock._id} has no Omie ID, skipping`);
-        continue;
-      }
+      return await callOmieWithUser(userId, endpoint, action, params);
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
 
-      // First get current stock from Omie
-      let currentOmieStock = 0;
-      try {
-        const omieStockData = await getStockFromOmie(userId, product.omieId);
-        if (omieStockData && omieStockData.saldo !== undefined) {
-          currentOmieStock = omieStockData.saldo;
-        } else if (omieStockData && omieStockData.fisico !== undefined) {
-          currentOmieStock = omieStockData.fisico;
-        }
-      } catch (error) {
-        logger.warn(`Could not get current Omie stock for ${stock._id}, assuming 0`);
-      }
-
-      // Calculate difference
-      const difference = stock.totalQuantity - currentOmieStock;
-      
-      if (difference !== 0) {
-        await callOmieWithUser(
-          userId,
-          'estoque/movimento/',
-          'IncluirMovimentoEstoque',
-          {
-            codigo_local_estoque: 1, // Default warehouse
-            id_prod: parseInt(product.omieId),
-            data_movimento: new Date().toLocaleDateString('pt-BR'),
-            tipo_movimento: difference > 0 ? 'E' : 'S', // E = Entrada, S = Saída
-            quantidade: Math.abs(difference),
-            valor_unitario: 0,
-            motivo: 'Ajuste de Estoque WMS'
-          }
-        );
-        
-        logger.info(`Adjusted stock for ${stock._id}: ${currentOmieStock} → ${stock.totalQuantity} (${difference > 0 ? '+' : ''}${difference})`);
-      } else {
-        logger.info(`Stock already synchronized for ${stock._id}: ${stock.totalQuantity}`);
-      }
-      
-      successCount++;
-      logger.logStockSync(product, 'sent_to_omie', stock.totalQuantity);
-    } catch (error) {
-      errorCount++;
-      logger.error(`Failed to sync stock for ${stock._id}`, { error: error.message });
+      const delay = 500 * (attempt + 1);
+      logger.warn(`Retry ${attempt + 1} for ${action} in ${delay}ms`);
+      await sleep(delay);
     }
   }
-
-  logger.info('Stock sync to Omie completed', { successCount, errorCount });
-  return successCount;
 }
 
-export async function getStockFromOmie(userId, productOmieId) {
-  logger.debug(`Fetching stock from Omie for product ${productOmieId}`);
-  
-  try {
-    // Primeiro tenta buscar pelo ID do produto
-    const result = await callOmieWithUser(
+//
+// 🚀 1. BUSCAR TODO ESTOQUE DA OMIE (PAGINADO)
+//
+export async function listAllStockFromOmie(userId) {
+  let page = 1;
+  let totalPages = 1;
+  const allStock = [];
+
+  do {
+    const response = await callOmieWithRetry(
       userId,
       'estoque/consulta/',
-      'PosicaoEstoque',
+      'ListarPosEstoque',
       {
-        id_prod: parseInt(productOmieId),
-        codigo_local_estoque: 0, // Todos os locais
-        data: new Date().toLocaleDateString('pt-BR')
+        nPagina: page,
+        nRegPorPagina: 50,
+        dDataPosicao: new Date().toLocaleDateString('pt-BR'),
+        cExibeTodos: "N",
+        codigo_local_estoque: 0
       }
     );
 
-    logger.logApiCall('PosicaoEstoque', 'estoque/consulta/', { productOmieId }, result);
-    return result;
-  } catch (error) {
-    logger.logApiCall('PosicaoEstoque', 'estoque/consulta/', { productOmieId }, null, error);
-    
-    // Se falhar, tenta listar posição de estoque geral
-    try {
-      const listResult = await callOmieWithUser(
-        userId,
-        'estoque/consulta/',
-        'ListarPosEstoque',
-        {
-          nPagina: 1,
-          nRegPorPagina: 50,
-          dDataPosicao: new Date().toLocaleDateString('pt-BR'),
-          cExibeTodos: "N",
-          codigo_local_estoque: 0
-        }
-      );
-      
-      // Filtrar pelo produto específico
-      if (listResult.produtos && listResult.produtosArray) {
-        const productStock = listResult.produtosArray.find(
-          p => p.id_prod == productOmieId || p.cod_int === productOmieId
-        );
-        
-        if (productStock) {
-          logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, productStock);
-          return productStock;
-        }
-      }
-      
-      logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, listResult);
-      return listResult;
-    } catch (listError) {
-      logger.logApiCall('ListarPosEstoque', 'estoque/consulta/', { productOmieId }, null, listError);
-      throw listError;
-    }
-  }
+    const produtos = response.produtosArray || [];
+    totalPages = response.total_de_paginas || 1;
+
+    logger.debug(`Stock page ${page}/${totalPages} - ${produtos.length} items`);
+
+    allStock.push(...produtos);
+
+    page++;
+    await sleep(200);
+
+  } while (page <= totalPages);
+
+  logger.info(`Total stock items fetched: ${allStock.length}`);
+
+  return allStock;
 }
 
+//
+// 🚀 2. SYNC COMPLETO DE ESTOQUE (OTIMIZADO)
+//
 export async function syncAllStockFromOmie(userId) {
-  logger.info(`Starting full stock sync from Omie for user ${userId}`);
-  
-  // Importar produtos para garantir que temos os dados mais recentes
+  logger.info(`Starting optimized stock sync from Omie`);
+
+  // 🔹 garante produtos atualizados
   const { syncProducts } = await import('./omieProductService.js');
-  
-  logger.info('Syncing products first to get latest data...');
   await syncProducts(userId);
-  
-  const products = await Product.find({ omieId: { $exists: true, $ne: null }, isActive: true });
-  
-  // Criar localização RECEBIMENTO se não existir
+
+  // 🔹 busca tudo de estoque de uma vez
+  const allStock = await listAllStockFromOmie(userId);
+
+  // 🔹 cria mapa rápido
+  const stockMap = new Map();
+  for (const item of allStock) {
+    stockMap.set(parseInt(item.id_prod), item);
+  }
+
+  // 🔹 produtos locais
+  const products = await Product.find({
+    omieId: { $exists: true, $ne: null },
+    isActive: true
+  });
+
+  // 🔹 garantir localização
   let receivingLocation = await Location.findOne({ code: 'RECEBIMENTO' });
   if (!receivingLocation) {
     receivingLocation = await Location.create({
@@ -157,7 +94,6 @@ export async function syncAllStockFromOmie(userId) {
       type: 'receiving',
       zone: 'Recebimento'
     });
-    logger.info('Created RECEBIMENTO location');
   }
 
   let syncedCount = 0;
@@ -165,144 +101,130 @@ export async function syncAllStockFromOmie(userId) {
 
   for (const product of products) {
     try {
-      // Tenta consultar estoque via API específica primeiro
-      let stockQuantity = null;
-      
-      try {
-        const omieStock = await getStockFromOmie(userId, product.omieId);
-        
-        // Extrair quantidade do campo correto 'saldo'
-        if (omieStock && omieStock.saldo !== undefined) {
-          stockQuantity = omieStock.saldo;
-        } else if (omieStock && omieStock.fisico !== undefined) {
-          stockQuantity = omieStock.fisico;
-        }
-      } catch (apiError) {
-        logger.warn(`Failed to get stock from API for ${product.codigo}, trying product data...`);
-        
-        // Se falhar, usa o quantidade_estoque do produto
-        if (product.quantidade_estoque !== undefined) {
-          stockQuantity = product.quantidade_estoque;
-          logger.info(`Using stock quantity from product data for ${product.codigo}: ${stockQuantity}`);
-        }
+      const omieStock = stockMap.get(parseInt(product.omieId));
+
+      if (!omieStock) {
+        logger.warn(`No stock found in Omie for ${product.codigo}`);
+        continue;
       }
-      
-      if (stockQuantity !== null && stockQuantity > 0) {
-        // Verificar estoque local atual
-        const currentStock = await Stock.find({ sku: product.codigo });
-        const localTotal = currentStock.reduce((sum, s) => sum + s.quantity, 0);
-        
-        // Se houver diferença, atualizar para bater com Omie
-        if (localTotal !== stockQuantity) {
-          logger.info(`Updating stock for ${product.codigo}: ${localTotal} → ${stockQuantity} (Omie has: ${stockQuantity})`);
-          
-          if (localTotal > 0) {
-            // Atualizar estoque existente
-            const difference = stockQuantity - localTotal;
-            
-            if (currentStock.length > 0) {
-              // Distribuir a diferença no primeiro registro
-              const firstStock = currentStock[0];
-              firstStock.quantity = Math.max(0, firstStock.quantity + difference);
-              firstStock.lastUpdated = new Date();
-              firstStock.omieSyncedAt = new Date();
-              await firstStock.save();
-              
-              logger.info(`Updated stock record for ${product.codigo} by ${difference > 0 ? '+' : ''}${difference}`);
-            }
-          } else {
-            // Criar/atualizar estoque em RECEBIMENTO
-            await Stock.findOneAndUpdate(
-              { sku: product.codigo, locationCode: 'RECEBIMENTO' },
-              { 
-                quantity: stockQuantity,
-                lastUpdated: new Date(),
-                omieSyncedAt: new Date()
-              },
-              { upsert: true, new: true }
-            );
-            
-            logger.info(`Created stock record for ${product.codigo} with ${stockQuantity} units`);
-          }
-          
-          syncedCount++;
-          logger.logStockSync(product, 'updated_to_omie', stockQuantity);
+
+      const stockQuantity =
+        omieStock.saldo ?? omieStock.fisico ?? 0;
+
+      const currentStock = await Stock.find({ sku: product.codigo });
+      const localTotal = currentStock.reduce((sum, s) => sum + s.quantity, 0);
+
+      if (localTotal !== stockQuantity) {
+        const difference = stockQuantity - localTotal;
+
+        logger.info(`Updating ${product.codigo}: ${localTotal} → ${stockQuantity}`);
+
+        if (currentStock.length > 0) {
+          const firstStock = currentStock[0];
+          firstStock.quantity = Math.max(0, firstStock.quantity + difference);
+          firstStock.lastUpdated = new Date();
+          firstStock.omieSyncedAt = new Date();
+          await firstStock.save();
         } else {
-          // Estoque já sincronizado
-          logger.info(`Stock already synchronized for ${product.codigo}: ${localTotal}`);
-          syncedCount++;
-          logger.logStockSync(product, 'already_synced', localTotal);
+          await Stock.findOneAndUpdate(
+            { sku: product.codigo, locationCode: 'RECEBIMENTO' },
+            {
+              quantity: stockQuantity,
+              lastUpdated: new Date(),
+              omieSyncedAt: new Date()
+            },
+            { upsert: true }
+          );
         }
-        
-        await receivingLocation.updateSku(product.codigo, stockQuantity, 0);
-        
-        syncedCount++;
-        logger.logStockSync(product, 'synced_to_receiving', stockQuantity);
-      } else {
-        logger.warn(`No stock quantity found for product ${product.codigo}`);
+
+        logger.logStockSync(product, 'updated_from_omie', stockQuantity);
       }
-      
+
+      await receivingLocation.updateSku(product.codigo, stockQuantity, 0);
+
+      syncedCount++;
+
     } catch (error) {
       errors.push({ product: product.codigo, error: error.message });
-      logger.logStockSync(product, 'sync_from_omie_failed', 0, error);
+      logger.error(`Stock sync failed for ${product.codigo}`, {
+        error: error.message
+      });
     }
   }
 
-  logger.logSyncResult('stock_from_omie', { syncedCount, errors });
+  logger.info(`Stock sync finished`, { syncedCount, errors: errors.length });
+
   return { syncedCount, errors };
 }
 
-export async function getStockMovementsFromOmie(userId, productOmieId, startDate, endDate) {
-  logger.debug(`Fetching stock movements from Omie for product ${productOmieId}`);
-  
-  try {
-    // Usar o método correto para listar movimentos
-    const result = await callOmieWithUser(
-      userId,
-      'estoque/consulta/',
-      'ListarMovimentoEstoque',
-      {
-        nPagina: 1,
-        nRegPorPagina: 50,
-        codigo_local_estoque: 0, // Todos os locais
-        idProd: parseInt(productOmieId),
-        dDtInicial: startDate,
-        dDtFinal: endDate,
-        lista_local_estoque: ""
-      }
-    );
-
-    logger.logApiCall('ListarMovimentoEstoque', 'estoque/consulta/', { productOmieId, startDate, endDate }, result);
-    return result;
-  } catch (error) {
-    logger.logApiCall('ListarMovimentoEstoque', 'estoque/consulta/', { productOmieId, startDate, endDate }, null, error);
-    throw error;
-  }
-}
-
+//
+// 🚀 3. ENVIAR AJUSTE DE ESTOQUE (COM RETRY)
+//
 export async function adjustStockInOmie(userId, productOmieId, quantity, reason = 'Ajuste WMS') {
-  logger.info(`Adjusting stock in Omie for product ${productOmieId}`, { quantity, reason });
-  
   try {
-    const result = await callOmieWithUser(
+    const result = await callOmieWithRetry(
       userId,
       'estoque/movimento/',
       'IncluirMovimentoEstoque',
       {
-        codigo_local_estoque: 1, // Default warehouse
+        codigo_local_estoque: 1,
         id_prod: parseInt(productOmieId),
         data_movimento: new Date().toLocaleDateString('pt-BR'),
-        tipo_movimento: quantity > 0 ? 'E' : 'S', // E = Entrada, S = Saída
+        tipo_movimento: quantity > 0 ? 'E' : 'S',
         quantidade: Math.abs(quantity),
         valor_unitario: 0,
         motivo: reason
       }
     );
 
-    logger.logApiCall('IncluirMovimentoEstoque', 'estoque/movimento/', { productOmieId, quantity, reason }, result);
+    logger.logApiCall('IncluirMovimentoEstoque', 'estoque/movimento/', {
+      productOmieId,
+      quantity
+    }, result);
+
     return result;
+
   } catch (error) {
-    logger.logApiCall('IncluirMovimentoEstoque', 'estoque/movimento/', { productOmieId, quantity, reason }, null, error);
+    logger.error(`Failed to adjust stock`, {
+      productOmieId,
+      error: error.message
+    });
     throw error;
   }
+}
+
+//
+// 🚀 4. MOVIMENTOS (PAGINADO)
+//
+export async function getStockMovementsFromOmie(userId, productOmieId, startDate, endDate) {
+  let page = 1;
+  let totalPages = 1;
+  const allMovements = [];
+
+  do {
+    const response = await callOmieWithRetry(
+      userId,
+      'estoque/consulta/',
+      'ListarMovimentoEstoque',
+      {
+        nPagina: page,
+        nRegPorPagina: 50,
+        idProd: parseInt(productOmieId),
+        dDtInicial: startDate,
+        dDtFinal: endDate,
+        codigo_local_estoque: 0
+      }
+    );
+
+    const movimentos = response.movimentos || [];
+    totalPages = response.total_de_paginas || 1;
+
+    allMovements.push(...movimentos);
+
+    page++;
+    await sleep(200);
+
+  } while (page <= totalPages);
+
+  return allMovements;
 }
